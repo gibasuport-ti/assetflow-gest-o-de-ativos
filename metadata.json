@@ -1,0 +1,7 @@
+{
+  "name": "AssetFlow - Gestão de Ativos",
+  "description": "Um sistema robusto para gestão de troca de ativos (notebooks, smartphones, PCs), permitindo registro de entregas/devoluções, exportação para Excel e geração de termos em PDF para assinatura manual ou via DocuSign.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

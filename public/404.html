@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AssetFlow</title>
+    <script type="text/javascript">
+      // Single Page Apps for GitHub Pages
+      (function(l) {
+        var segments = l.pathname.split('/');
+        var repoName = segments[1];
+        var p = (segments.length > 2 ? '/' + segments.slice(2).join('/') : '');
+        l.replace(
+          l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+          '/' + repoName + '/?p=' + p.replace(/&/g, '~and~') +
+          (l.search ? '&q=' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+          l.hash
+        );
+      }(window.location))
+    </script>
+  </head>
+  <body>
+  </body>
+</html>

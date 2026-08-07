@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AssetFlow - Gestão de Ativos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dracula: {
+                            bg: '#282a36',
+                            current: '#44475a',
+                            fg: '#f8f8f2',
+                            comment: '#6272a4',
+                            cyan: '#8be9fd',
+                            green: '#50fa7b',
+                            orange: '#ffb86c',
+                            pink: '#ff79c6',
+                            purple: '#bd93f9',
+                            red: '#ff5555',
+                            yellow: '#f1fa8c',
+                            darker: '#21222c'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
+    <script type="text/javascript">
+      // Single Page Apps for GitHub Pages
+      (function(l) {
+        var segments = l.pathname.split('/');
+        var repoName = segments[1];
+        if (l.search[1] === '/' ) {
+          var decoded = l.search.slice(1).split('&').map(function(s) { 
+            return s.replace(/~and~/g, '&')
+          }).join('?');
+          window.history.replaceState(null, null,
+              '/' + repoName + decoded + l.hash
+          );
+        }
+      }(window.location))
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-signature { 
+            font-family: 'Great Vibes', cursive;
+            letter-spacing: 1px;
+        }
+        /* Fix for html5-qrcode video element responsive */
+        #qr-reader-container video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+        }
+        /* Transição suave de cores */
+        * { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.1s ease; }
+    </style>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body class="bg-slate-50 dark:bg-dracula-bg text-slate-900 dark:text-dracula-fg">
+    <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
+</body>
+</html>

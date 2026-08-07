@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AssetFlow - Local Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-signature { font-family: 'Great Vibes', cursive; }
+        .dracula-bg { background-color: #282a36; }
+        .dracula-fg { color: #f8f8f2; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <div id="root">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                <h2 class="text-xl font-semibold text-slate-700">Carregando AssetFlow...</h2>
+                <p class="text-slate-500 text-sm mt-2">Isso pode levar alguns segundos no primeiro carregamento local.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuração do React e Babel via CDN para rodar sem NPM -->
+    <script type="text/babel" data-type="module" data-presets="react,typescript">
+        import React, { useState, useEffect } from 'https://esm.sh/react@18.2.0';
+        import ReactDOM from 'https://esm.sh/react-dom@18.2.0/client';
+        import * as Lucide from 'https://esm.sh/lucide-react@0.344.0';
+
+        // Interface Simplificada para o Preview Local
+        const App = () => {
+            return (
+                <div class="min-h-screen bg-slate-50 flex flex-col">
+                    <header class="bg-white border-b border-slate-200 p-4 flex justify-between items-center shadow-sm">
+                        <div class="flex items-center gap-2">
+                            <div class="bg-indigo-600 p-2 rounded-lg">
+                                <Lucide.HardDrive class="text-white w-6 h-6" />
+                            </div>
+                            <h1 class="text-xl font-bold text-slate-800 tracking-tight">AssetFlow</h1>
+                        </div>
+                        <div class="flex items-center gap-4">
+                             <span class="text-sm text-slate-500 font-medium">Preview Local Ativo</span>
+                             <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                                <Lucide.User class="w-5 h-5 text-slate-600" />
+                             </div>
+                        </div>
+                    </header>
+
+                    <main class="flex-1 p-8 max-w-7xl mx-auto w-full">
+                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+                            <Lucide.CheckCircle2 class="w-16 h-16 text-emerald-500 mx-auto mb-4" />
+                            <h2 class="text-2xl font-bold text-slate-800 mb-2">Ambiente Local Detectado!</h2>
+                            <p class="text-slate-600 mb-8 max-w-md mx-auto">
+                                Para rodar a versão completa com Banco de Dados e Excel, você precisa instalar o <strong>Node.js</strong> no seu computador.
+                            </p>
+                            
+                            <div class="grid md:grid-cols-2 gap-4 text-left max-w-2xl mx-auto">
+                                <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                    <h3 class="font-bold text-slate-800 flex items-center gap-2 mb-2">
+                                        <Lucide.Download class="w-4 h-4 text-indigo-600" /> 1. Instalar Node.js
+                                    </h3>
+                                    <p class="text-sm text-slate-500">Baixe em nodejs.org e instale a versão LTS.</p>
+                                </div>
+                                <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                    <h3 class="font-bold text-slate-800 flex items-center gap-2 mb-2">
+                                        <Lucide.Terminal class="w-4 h-4 text-indigo-600" /> 2. Rodar Comando
+                                    </h3>
+                                    <p class="text-sm text-slate-500">No terminal do VS Code: <code>npm run dev</code></p>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={() => window.location.href = 'https://nodejs.org'}
+                                class="mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg shadow-indigo-200"
+                            >
+                                Baixar Node.js Agora
+                            </button>
+                        </div>
+                    </main>
+
+                    <footer class="p-6 text-center text-slate-400 text-sm border-t border-slate-100">
+                        &copy; 2024 AssetFlow - Sistema de Gestão de Ativos
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <!-- Carregador Babel para processar o script acima -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Firebase Auth UID" },
+        "username": { "type": "string", "description": "Display name" },
+        "email": { "type": "string", "format": "email" },
+        "isAdmin": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "username", "email", "isAdmin"]
+    },
+    "AssetExchange": {
+      "title": "AssetExchange",
+      "description": "Record of asset delivery or return",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "operationType": { "type": "string", "enum": ["exchange", "delivery", "return"] },
+        "status": { "type": "string", "enum": ["draft", "pending_receiver", "completed"] },
+        "timestamp": { "type": "number" },
+        "colaborador_nome": { "type": "string" },
+        "colaborador_email": { "type": "string" },
+        "data_troca": { "type": "string" },
+        "entregue_tipo": { "type": "string" },
+        "entregue_marca": { "type": "string" },
+        "entregue_modelo": { "type": "string" },
+        "entregue_serial": { "type": "string" },
+        "createdBy": { "type": "string", "description": "UID of the user who created the record" },
+        "docusign_envelope_id": { "type": "string" },
+        "docusign_status": { "type": "string", "enum": ["pending", "completed", "declined", "voided"] },
+        "docusign_signed_at": { "type": "number" },
+        "docusign_file_path": { "type": "string" }
+      },
+      "required": ["id", "operationType", "status", "timestamp", "colaborador_nome", "createdBy"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System audit logs for DocuSign and other actions",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "exchangeId": { "type": "string" },
+        "envelopeId": { "type": "string" },
+        "timestamp": { "type": "object", "description": "Firestore ServerTimestamp" },
+        "user": { "type": "string" },
+        "error": { "type": "string" },
+        "reason": { "type": "string" },
+        "filePath": { "type": "string" }
+      },
+      "required": ["action", "timestamp"]
+    },
+    "MockEmail": {
+      "title": "MockEmail",
+      "description": "History of sent notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "to": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" },
+        "sentAt": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "to", "subject", "sentAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "User",
+      "description": "Collection of user profiles"
+    },
+    "exchanges": {
+      "schema": "AssetExchange",
+      "description": "Collection of asset exchange records"
+    },
+    "emails": {
+      "schema": "MockEmail",
+      "description": "Collection of mock email history"
+    },
+    "audit_logs": {
+      "schema": "AuditLog",
+      "description": "Collection of system audit logs"
+    }
+  }
+}
