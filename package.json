@@ -6,12 +6,12 @@
   "author": "Giba Suporte",
   "type": "module",
   "scripts": {
-    "dev": "npx tsx server.ts",
-    "build": "npx vite build",
-    "build:github": "npx vite build --mode github",
-    "build:server": "npx esbuild server.ts --bundle --platform=node --format=cjs --outfile=dist/server.cjs --external:vite",
-    "preview": "npx vite preview",
-    "lint": "npx tsc --noEmit",
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "build:github": "vite build --mode github",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
     "predeploy": "npm run build:github",
     "deploy": "gh-pages -r https://github.com/gibasuport-ti/AssetFlow.git -d dist"
   },

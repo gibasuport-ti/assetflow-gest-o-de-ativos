@@ -27,7 +27,9 @@ export const exportToExcel = (data: AssetExchange[]) => {
       "Entregue Processador": item.entregue_processador || "",
       "Entregue Memoria": item.entregue_memoria || "",
       "Entregue HD": item.entregue_armazenamento || "",
-      "Entregue Acessorios": Array.isArray(item.entregue_acessorios) ? item.entregue_acessorios.join(', ') : "",
+      "Entregue Acessorios": Array.isArray(item.entregue_acessorios) 
+        ? item.entregue_acessorios.map(a => item.entregue_acessorios_seriais?.[a] ? `${a} (S/N: ${item.entregue_acessorios_seriais[a]})` : a).join(', ') 
+        : "",
       "Obs Entrega": item.entregue_observacoes || "",
       "Itens Adicionais Entrega": Array.isArray(item.entregue_adicionais) ? item.entregue_adicionais.map(i => `${i.tipo || ''}: ${i.marca || ''} ${i.modelo || ''} (${i.serial || ''})`).join(' | ') : "",
       "Devolvido Tipo": item.devolvido_tipo || "",
@@ -38,7 +40,9 @@ export const exportToExcel = (data: AssetExchange[]) => {
       "Devolvido Processador": item.devolvido_processador || "",
       "Devolvido Memoria": item.devolvido_memoria || "",
       "Devolvido HD": item.devolvido_armazenamento || "",
-      "Devolvido Acessorios": Array.isArray(item.devolvido_acessorios) ? item.devolvido_acessorios.join(', ') : "",
+      "Devolvido Acessorios": Array.isArray(item.devolvido_acessorios) 
+        ? item.devolvido_acessorios.map(a => item.devolvido_acessorios_seriais?.[a] ? `${a} (S/N: ${item.devolvido_acessorios_seriais[a]})` : a).join(', ') 
+        : "",
       "Obs Devolução": item.devolvido_observacoes || "",
       "Itens Adicionais Devolução": Array.isArray(item.devolvido_adicionais) ? item.devolvido_adicionais.map(i => `${i.tipo || ''}: ${i.marca || ''} ${i.modelo || ''} (${i.serial || ''})`).join(' | ') : "",
       "Devolução Sem Termo": item.devolucao_sem_termo ? "Sim (Motoboy/Transportadora)" : "Não",
@@ -129,6 +133,9 @@ export const importFromExcel = (file: File): Promise<AssetExchange[]> => {
           if (rowOp === 'Entrega (Novo)' || rowOp === 'delivery') opType = 'delivery';
           if (rowOp === 'Devolução (Saída)' || rowOp === 'return') opType = 'return';
 
+          const parsedEntregueAccs = parseAccessories(row["Entregue Acessorios"]);
+          const parsedDevolvidoAccs = parseAccessories(row["Devolvido Acessorios"]);
+
           return {
             id: String(row["ID"] || Math.random().toString(36).substr(2, 9).toUpperCase()),
             operationType: opType,
@@ -150,7 +157,8 @@ export const importFromExcel = (file: File): Promise<AssetExchange[]> => {
             entregue_condicao: row["Entregue Condicao"] as EquipmentCondition,
             entregue_memoria: String(row["Entregue Memoria"] || ""),
             entregue_armazenamento: String(row["Entregue HD"] || ""),
-            entregue_acessorios: row["Entregue Acessorios"] ? String(row["Entregue Acessorios"]).split(', ') : [],
+            entregue_acessorios: parsedEntregueAccs.list,
+            entregue_acessorios_seriais: parsedEntregueAccs.serials,
             devolvido_tipo: String(row["Devolvido Tipo"] || ""),
             devolvido_marca: String(row["Devolvido Marca"] || ""),
             devolvido_modelo: String(row["Devolvido Modelo"] || ""),
@@ -159,7 +167,8 @@ export const importFromExcel = (file: File): Promise<AssetExchange[]> => {
             devolvido_condicao: row["Devolvido Condicao"] as EquipmentCondition,
             devolvido_memoria: String(row["Devolvido Memoria"] || ""),
             devolvido_armazenamento: String(row["Devolvido HD"] || ""),
-            devolvido_acessorios: row["Devolvido Acessorios"] ? String(row["Devolvido Acessorios"]).split(', ') : [],
+            devolvido_acessorios: parsedDevolvidoAccs.list,
+            devolvido_acessorios_seriais: parsedDevolvidoAccs.serials,
             devolucao_sem_termo: String(row["Devolução Sem Termo"] || "").toLowerCase().includes("sim"),
             tipo_coleta: row["Tipo Coleta"] as any,
             empresa_transporte: String(row["Empresa Transporte"] || ""),
@@ -177,6 +186,31 @@ export const importFromExcel = (file: File): Promise<AssetExchange[]> => {
     reader.onerror = reject;
     reader.readAsArrayBuffer(file);
   });
+};
+
+const parseAccessories = (raw: any): { list: string[]; serials: Record<string, string> } => {
+  if (!raw || typeof raw !== 'string') return { list: [], serials: {} };
+  const items = raw.split(', ');
+  const list: string[] = [];
+  const serials: Record<string, string> = {};
+  
+  items.forEach(str => {
+    const trimmed = str.trim();
+    if (!trimmed) return;
+    const match = trimmed.match(/^(.+?)\s*\((?:S\/N|Serial):\s*([^)]+)\)$/i);
+    const normalizeAcc = (n: string) => (n === 'Teclado' || n === 'Kit combo Teclado e Mouse') ? 'Teclado e Mouse' : n;
+    if (match) {
+      const rawName = match[1].trim();
+      const sn = match[2].trim();
+      const name = normalizeAcc(rawName);
+      list.push(name);
+      serials[name] = sn;
+    } else {
+      const name = normalizeAcc(trimmed);
+      list.push(name);
+    }
+  });
+  return { list, serials };
 };
 
 const parseAdditionalItems = (value: any): any[] => {

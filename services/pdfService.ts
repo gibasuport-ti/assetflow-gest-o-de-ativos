@@ -187,30 +187,37 @@ export const generateAssetPDF = (exchange: AssetExchange, logoPref: LogoPreferen
       y += 4;
       
       doc.setDrawColor(boxBlue);
-      doc.rect(45, y, 120, 20);
+      doc.rect(25, y, 160, 22);
       
-      const accessories = ["Mouse", "Teclado", "Headset", "Mochila", "DockStation", "Monitor"];
+      const accessories = ["Mouse", "Teclado e Mouse", "Headset", "Monitor", "Mochila", "DockStation"];
       const selectedAccs = (exchange[`${prefix}acessorios` as keyof AssetExchange] as string[]) || [];
+      const serialsMap = (exchange[`${prefix}acessorios_seriais` as keyof AssetExchange] as Record<string, string>) || {};
       
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      let accX = 65;
+      let accX = 30;
       let accY = y + 5;
       
       accessories.forEach((acc, index) => {
         doc.rect(accX, accY - 2.5, 3, 3);
-        if (selectedAccs.includes(acc)) doc.text("x", accX + 0.8, accY);
-        doc.text(acc, accX + 5, accY);
+        const isSelected = selectedAccs.includes(acc) || 
+          (acc === 'Teclado e Mouse' && (selectedAccs.includes('Teclado') || selectedAccs.includes('Kit combo Teclado e Mouse')));
+        if (isSelected) doc.text("x", accX + 0.8, accY);
+        
+        const serial = serialsMap[acc] || (acc === 'Teclado e Mouse' ? (serialsMap['Kit combo Teclado e Mouse'] || serialsMap['Teclado']) : undefined);
+        const label = isSelected && serial ? `${acc} (S/N: ${serial})` : acc;
+        
+        doc.setFontSize(isSelected && serial ? 8 : 9);
+        doc.setFont("helvetica", isSelected ? "bold" : "normal");
+        doc.text(label, accX + 5, accY);
         
         if (index === 2) {
-          accX = 110;
+          accX = 112;
           accY = y + 5;
         } else {
           accY += 6;
         }
       });
 
-      y += 25;
+      y += 27;
 
       // 5. Equipamentos Adicionais
       const additionalItems = (exchange[`${prefix}adicionais` as keyof AssetExchange] as any[]) || [];

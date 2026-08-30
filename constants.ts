@@ -4,10 +4,26 @@ export const EQUIPMENT_TYPES = [
   "Smartphone",
   "Desktop PC",
   "Monitor",
-  "Teclado/Mouse",
+  "Teclado e Mouse",
   "Headset",
   "Adaptador/Dock",
   "Tablet"
+];
+
+export const ACCESSORIES_OPTIONS = [
+  "Mouse",
+  "Teclado e Mouse",
+  "Headset",
+  "Monitor",
+  "Mochila",
+  "DockStation"
+];
+
+export const ACCESSORIES_WITH_SERIAL = [
+  "Mouse",
+  "Teclado e Mouse",
+  "Headset",
+  "Monitor"
 ];
 
 export const BRANDS = [

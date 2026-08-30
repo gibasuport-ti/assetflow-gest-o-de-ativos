@@ -38,6 +38,7 @@ export interface AssetExchange {
   entregue_memoria: string;
   entregue_armazenamento: string;
   entregue_acessorios: string[];
+  entregue_acessorios_seriais?: Record<string, string>;
   entregue_observacoes: string;
   entregue_adicionais?: AdditionalItem[];
 
@@ -51,6 +52,7 @@ export interface AssetExchange {
   devolvido_memoria: string;
   devolvido_armazenamento: string;
   devolvido_acessorios: string[];
+  devolvido_acessorios_seriais?: Record<string, string>;
   devolvido_observacoes: string;
   devolvido_adicionais?: AdditionalItem[];
 

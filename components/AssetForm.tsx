@@ -1,10 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AssetExchange, EquipmentCondition, OperationType } from '../types';
-import { EQUIPMENT_TYPES, BRANDS, MODELS_LIST, PROCESSORS_LIST, MODEL_SPECS, MEMORY_LIST, STORAGE_LIST, AD_USERS, MERCADO_PAGO_URL } from '../constants';
-import { User, Package, History, Send, ScanLine, Lock, Loader2, Search, Fingerprint, CheckSquare, FileText, ArrowRightLeft, UserPlus, UserMinus, Plus, Trash2, CreditCard, Truck } from 'lucide-react';
+import { AssetExchange, EquipmentCondition, OperationType, AdditionalItem } from '../types';
+import { EQUIPMENT_TYPES, BRANDS, MODELS_LIST, PROCESSORS_LIST, MODEL_SPECS, MEMORY_LIST, STORAGE_LIST, AD_USERS, MERCADO_PAGO_URL, ACCESSORIES_OPTIONS, ACCESSORIES_WITH_SERIAL } from '../constants';
+import { 
+  User, Package, History, Send, ScanLine, Lock, Loader2, Search, Fingerprint, 
+  CheckSquare, FileText, ArrowRightLeft, UserPlus, UserMinus, Plus, Trash2, 
+  CreditCard, Truck
+} from 'lucide-react';
 import BarcodeScannerModal from './BarcodeScannerModal';
-import { AdditionalItem } from '../types';
+import { apiService } from '../services/apiService';
 
 interface AssetFormProps {
   onSave: (exchange: AssetExchange, isDocuSignDirect?: boolean) => Promise<void> | void;
@@ -12,8 +16,6 @@ interface AssetFormProps {
   onCancel?: () => void;
   isAdmin?: boolean;
 }
-
-const ACCESSORIES_OPTIONS = ["Mouse", "Mochila", "Teclado", "DockStation", "Headset", "Monitor"];
 
 // Componente Header Auxiliar
 const SectionHeader = ({ icon: Icon, title, color }: any) => (
@@ -27,10 +29,8 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
   const isReadOnly = editingExchange?.status === 'completed';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestedUsers, setSuggestedUsers] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [suggestedUsers, setSuggestedUsers] = useState<typeof AD_USERS>([]);
   const adRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<number | null>(null);
 
   const [formData, setFormData] = useState<AssetExchange>({
     id: '',
@@ -49,6 +49,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
     entregue_memoria: MEMORY_LIST[2],
     entregue_armazenamento: STORAGE_LIST[3],
     entregue_acessorios: [],
+    entregue_acessorios_seriais: {},
     entregue_observacoes: 'Entrega referente a troca',
     devolvido_tipo: EQUIPMENT_TYPES[0],
     devolvido_marca: BRANDS[0],
@@ -59,6 +60,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
     devolvido_memoria: MEMORY_LIST[2],
     devolvido_armazenamento: STORAGE_LIST[3],
     devolvido_acessorios: [],
+    devolvido_acessorios_seriais: {},
     devolvido_observacoes: 'Devolução referente a troca'
   });
 
@@ -70,7 +72,12 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
 
   const isFreeVersion = formData.operationType !== 'delivery' && !isAdmin;
 
-  const [scannerConfig, setScannerConfig] = useState<{ isOpen: boolean; target: 'entregue' | 'devolvido'; itemId?: string }>({
+  const [scannerConfig, setScannerConfig] = useState<{ 
+    isOpen: boolean; 
+    target: 'entregue' | 'devolvido'; 
+    itemId?: string;
+    accessoryKey?: string;
+  }>({
     isOpen: false,
     target: 'entregue'
   });
@@ -79,9 +86,29 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
     if (editingExchange) {
         // Migration logic for old 'observacoes' field if it exists in data but new fields don't
         const oldData = editingExchange as any;
+        const normalizeAcc = (a: string) => (a === 'Teclado' || a === 'Kit combo Teclado e Mouse') ? 'Teclado e Mouse' : a;
+        const entregueAccs = (editingExchange.entregue_acessorios || []).map(normalizeAcc);
+        const devolvidoAccs = (editingExchange.devolvido_acessorios || []).map(normalizeAcc);
+
+        const normalizeSerials = (serials?: Record<string, string>) => {
+          if (!serials) return {};
+          const next: Record<string, string> = { ...serials };
+          if (next['Teclado']) {
+            next['Teclado e Mouse'] = next['Teclado'];
+          }
+          if (next['Kit combo Teclado e Mouse']) {
+            next['Teclado e Mouse'] = next['Kit combo Teclado e Mouse'];
+          }
+          return next;
+        };
+
         setFormData({
             ...editingExchange,
             operationType: editingExchange.operationType || 'exchange', // Default for legacy records
+            entregue_acessorios: entregueAccs,
+            entregue_acessorios_seriais: normalizeSerials(editingExchange.entregue_acessorios_seriais),
+            devolvido_acessorios: devolvidoAccs,
+            devolvido_acessorios_seriais: normalizeSerials(editingExchange.devolvido_acessorios_seriais),
             entregue_observacoes: editingExchange.entregue_observacoes || oldData.observacoes || '',
             devolvido_observacoes: editingExchange.devolvido_observacoes || '',
             entregue_adicionais: editingExchange.entregue_adicionais || [],
@@ -171,36 +198,20 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
 
   const handleNameInput = (value: string) => {
     setFormData(prev => ({ ...prev, colaborador_nome: value }));
-    
-    if (!value && value !== "") {
-      setShowSuggestions(false);
-      setSuggestedUsers([]);
-      return;
-    }
-    
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-
     if (value.trim().length > 1) {
       const term = value.toLowerCase();
-      const usersList = AD_USERS || [];
-      const results = usersList.filter(u => 
-        u.nome.toLowerCase().includes(term) || 
-        u.email.toLowerCase().includes(term)
-      ).slice(0, 5);
-      
+      const results = (AD_USERS || []).filter(u => 
+        u.nome.toLowerCase().includes(term) || u.email.toLowerCase().includes(term)
+      ).slice(0, 8);
       setSuggestedUsers(results);
-      setShowSuggestions(true);
+      setShowSuggestions(results.length > 0);
     } else {
       setShowSuggestions(false);
     }
   };
 
-  const handleSelectUser = (u: any) => {
-    setFormData(prev => ({
-      ...prev, 
-      colaborador_nome: u.nome, 
-      colaborador_email: u.email
-    })); 
+  const handleSelectUser = (u: { nome: string; email: string }) => {
+    setFormData(prev => ({ ...prev, colaborador_nome: u.nome, colaborador_email: u.email })); 
     setShowSuggestions(false);
   };
 
@@ -330,6 +341,7 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
       {/* Dados Colaborador */}
       <section>
         <SectionHeader icon={User} title="Informações do Colaborador" color="bg-dracula-purple" />
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="relative z-50" ref={adRef}>
             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Nome Completo</label>
@@ -337,41 +349,53 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
               <input 
                 disabled={isReadOnly} 
                 required 
-                className="w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple dark:bg-blue-500/10 dark:border-blue-500/20 outline-none transition-all text-sm pl-10 font-bold text-blue-900 dark:text-blue-100" 
+                className="w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple dark:bg-blue-500/10 dark:border-blue-500/20 outline-none transition-all text-sm pl-10 font-bold text-blue-900 dark:text-blue-100 shadow-sm" 
                 value={formData.colaborador_nome} 
                 onChange={e => handleNameInput(e.target.value)} 
-                onFocus={() => handleNameInput(formData.colaborador_nome)}
+                onFocus={() => {
+                  if (formData.colaborador_nome) handleNameInput(formData.colaborador_nome);
+                }}
                 autoComplete="off"
-                placeholder="Digite para buscar..."
+                placeholder="Digite para buscar no catálogo..."
               />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={16}/>
-              {isSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-dracula-purple" size={16}/>}
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={16}/>
             </div>
+
             {showSuggestions && suggestedUsers.length > 0 && (
-              <div className="absolute top-full left-0 w-full z-[100] mt-1 bg-white dark:bg-dracula-current rounded-xl shadow-2xl border border-slate-100 dark:border-dracula-current overflow-hidden max-h-60 overflow-y-auto">
+              <div className="absolute top-full left-0 w-full z-[100] mt-1.5 bg-white dark:bg-dracula-current rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden max-h-60 overflow-y-auto">
                 {suggestedUsers.map((u, i) => (
-                  <button key={i} type="button" onClick={() => handleSelectUser(u)} className="w-full p-3 text-left hover:bg-slate-50 dark:hover:bg-dracula-bg border-b dark:border-dracula-bg last:border-0 transition-colors group">
-                    <div className="font-bold text-xs text-slate-700 dark:text-dracula-fg group-hover:text-dracula-purple">{u.nome}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-dracula-comment">{u.email}</div>
+                  <button 
+                    key={i} 
+                    type="button" 
+                    onClick={() => handleSelectUser(u)} 
+                    className="w-full p-3 text-left hover:bg-slate-50 dark:hover:bg-dracula-bg border-b border-slate-100 dark:border-dracula-bg last:border-0 transition-colors group flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-bold text-xs text-slate-800 dark:text-dracula-fg group-hover:text-dracula-purple">{u.nome}</div>
+                      <div className="text-[11px] text-slate-400 dark:text-dracula-comment">{u.email}</div>
+                    </div>
                   </button>
                 ))}
               </div>
             )}
           </div>
+
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">E-mail Corporativo</label>
             <input 
               disabled={isReadOnly} 
               type="email" 
               required 
-              className="w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple mt-1 dark:bg-blue-500/10 dark:border-blue-500/20 text-sm outline-none transition-all font-bold text-blue-900 dark:text-blue-100" 
+              placeholder="exemplo@empresa.com"
+              className="w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple mt-1 dark:bg-blue-500/10 dark:border-blue-500/20 text-sm outline-none transition-all font-bold text-blue-900 dark:text-blue-100 shadow-sm" 
               value={formData.colaborador_email} 
               onChange={e => setFormData(prev => ({...prev, colaborador_email: e.target.value}))}
             />
           </div>
+
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Data da Operação</label>
-            <input disabled={isReadOnly} type="date" required className="w-full p-4 rounded-xl border-2 border-slate-100 focus:border-dracula-purple mt-1 dark:bg-dracula-bg text-sm outline-none transition-all" value={formData.data_troca} onChange={e => setFormData(prev => ({...prev, data_troca: e.target.value}))}/>
+            <input disabled={isReadOnly} type="date" required className="w-full p-4 rounded-xl border-2 border-slate-100 focus:border-dracula-purple mt-1 dark:bg-dracula-bg text-sm outline-none transition-all shadow-sm" value={formData.data_troca} onChange={e => setFormData(prev => ({...prev, data_troca: e.target.value}))}/>
           </div>
         </div>
       </section>
@@ -555,6 +579,58 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
                     </button>
                   ))}
                 </div>
+
+                {/* Campos de Serial para Acessórios Entregues Selecionados */}
+                {formData.entregue_acessorios.some(acc => ACCESSORIES_WITH_SERIAL.includes(acc)) && (
+                  <div className="mt-3 p-3.5 bg-emerald-500/10 dark:bg-emerald-950/20 border border-emerald-500/20 dark:border-emerald-500/30 rounded-xl space-y-3 animate-in fade-in duration-200">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                      <Fingerprint size={13} />
+                      Número de Serial dos Acessórios (Entrega)
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {formData.entregue_acessorios.filter(acc => ACCESSORIES_WITH_SERIAL.includes(acc)).map(acc => (
+                        <div key={acc} className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-500 dark:text-dracula-comment uppercase flex items-center justify-between">
+                            <span>Serial / IMEI - {acc}</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              disabled={isReadOnly}
+                              className="w-full p-2.5 pr-9 rounded-lg border bg-white dark:bg-dracula-bg border-emerald-200 dark:border-emerald-900/50 text-xs font-mono font-bold outline-none focus:border-emerald-500 transition-all placeholder:font-sans placeholder:font-normal placeholder:text-slate-400"
+                              placeholder={`Digite ou escaneie o serial...`}
+                              value={formData.entregue_acessorios_seriais?.[acc] || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setFormData(prev => ({
+                                  ...prev,
+                                  entregue_acessorios_seriais: {
+                                    ...(prev.entregue_acessorios_seriais || {}),
+                                    [acc]: val
+                                  }
+                                }));
+                              }}
+                            />
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => setScannerConfig({
+                                  isOpen: true,
+                                  target: 'entregue',
+                                  accessoryKey: acc
+                                })}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 p-1 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded transition-colors"
+                                title={`Escanear código de barras de ${acc}`}
+                              >
+                                <ScanLine size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Additional Items for Delivery */}
@@ -821,6 +897,58 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
                     </button>
                   ))}
                 </div>
+
+                {/* Campos de Serial para Acessórios Devolvidos Selecionados */}
+                {formData.devolvido_acessorios.some(acc => ACCESSORIES_WITH_SERIAL.includes(acc)) && (
+                  <div className="mt-3 p-3.5 bg-rose-500/10 dark:bg-rose-950/20 border border-rose-500/20 dark:border-rose-500/30 rounded-xl space-y-3 animate-in fade-in duration-200">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
+                      <Fingerprint size={13} />
+                      Número de Serial dos Acessórios (Devolução)
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {formData.devolvido_acessorios.filter(acc => ACCESSORIES_WITH_SERIAL.includes(acc)).map(acc => (
+                        <div key={acc} className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-500 dark:text-dracula-comment uppercase flex items-center justify-between">
+                            <span>Serial / IMEI - {acc}</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              disabled={isReadOnly}
+                              className="w-full p-2.5 pr-9 rounded-lg border bg-white dark:bg-dracula-bg border-rose-200 dark:border-rose-900/50 text-xs font-mono font-bold outline-none focus:border-rose-500 transition-all placeholder:font-sans placeholder:font-normal placeholder:text-slate-400"
+                              placeholder={`Digite ou escaneie o serial...`}
+                              value={formData.devolvido_acessorios_seriais?.[acc] || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setFormData(prev => ({
+                                  ...prev,
+                                  devolvido_acessorios_seriais: {
+                                    ...(prev.devolvido_acessorios_seriais || {}),
+                                    [acc]: val
+                                  }
+                                }));
+                              }}
+                            />
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => setScannerConfig({
+                                  isOpen: true,
+                                  target: 'devolvido',
+                                  accessoryKey: acc
+                                })}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-rose-600 hover:text-rose-700 dark:text-rose-400 p-1 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors"
+                                title={`Escanear código de barras de ${acc}`}
+                              >
+                                <ScanLine size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Additional Items for Return */}
@@ -1121,18 +1249,30 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
 
       {scannerConfig.isOpen && (
         <BarcodeScannerModal 
-          title={scannerConfig.target === 'entregue' ? 'Escanear Serial Entregue' : 'Escanear Serial Devolvido'}
+          title={
+            scannerConfig.accessoryKey 
+              ? `Escanear Serial do ${scannerConfig.accessoryKey} (${scannerConfig.target === 'entregue' ? 'Entregue' : 'Devolvido'})`
+              : scannerConfig.itemId 
+              ? `Escanear Serial Item Adicional (${scannerConfig.target === 'entregue' ? 'Entregue' : 'Devolvido'})`
+              : scannerConfig.target === 'entregue' ? 'Escanear Serial Entregue' : 'Escanear Serial Devolvido'
+          }
           onScan={(text) => {
             const code = text.trim();
-            // Se for um serial longo (ex: de notebook), tenta pegar os últimos 8 chars
-            // Mas se for curto, mantém original.
-            const processedCode = code.length > 10 ? code.slice(-8) : code;
             
-            if (scannerConfig.itemId) {
-              updateAdditionalItem(scannerConfig.target, scannerConfig.itemId, { serial: processedCode });
+            if (scannerConfig.accessoryKey) {
+              const serialsField = scannerConfig.target === 'entregue' ? 'entregue_acessorios_seriais' : 'devolvido_acessorios_seriais';
+              setFormData(prev => ({
+                ...prev,
+                [serialsField]: {
+                  ...(prev[serialsField] || {}),
+                  [scannerConfig.accessoryKey!]: code
+                }
+              }));
+            } else if (scannerConfig.itemId) {
+              updateAdditionalItem(scannerConfig.target, scannerConfig.itemId, { serial: code });
             } else {
               const prefix = scannerConfig.target === 'entregue' ? 'entregue_' : 'devolvido_';
-              setFormData(prev => ({...prev, [`${prefix}serial`]: processedCode}));
+              setFormData(prev => ({...prev, [`${prefix}serial`]: code}));
             }
             setScannerConfig(prev => ({...prev, isOpen: false}));
           }}
