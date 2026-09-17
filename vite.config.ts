@@ -9,6 +9,10 @@ export default defineConfig(({ mode }) => {
     
     return {
       base,
+      define: {
+        'import.meta.env.VITE_APP_URL': JSON.stringify(process.env.APP_URL || env.APP_URL || 'https://ais-dev-lgs7bvr5nueqhnb5fgrdow-28350001985.us-west1.run.app'),
+        'import.meta.env.VITE_SHARED_APP_URL': JSON.stringify(process.env.SHARED_APP_URL || env.SHARED_APP_URL || 'https://ais-pre-lgs7bvr5nueqhnb5fgrdow-28350001985.us-west1.run.app'),
+      },
       plugins: [
         react()
       ],

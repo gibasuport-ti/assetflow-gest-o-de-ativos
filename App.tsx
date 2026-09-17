@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, ClipboardList, LogOut, CheckCircle2, AlertCircle, Mail, Loader2, HardDrive, PanelLeftClose, Menu, Image as ImageIcon, Sun, Moon, Settings, ShieldCheck, Maximize, Minimize, FileText, Link, User as UserIcon, Users, Lock, ExternalLink, CreditCard } from 'lucide-react';
+import { PlusCircle, ClipboardList, LogOut, CheckCircle2, AlertCircle, Mail, Loader2, HardDrive, PanelLeftClose, Menu, Image as ImageIcon, Sun, Moon, Settings, ShieldCheck, Maximize, Minimize, FileText, Link, User as UserIcon, Users, Lock, ExternalLink, CreditCard, Database, Smartphone, Globe, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { View, AssetExchange, MockEmail, LogoPreference, User } from './types';
 import AssetForm from './components/AssetForm';
@@ -9,11 +9,15 @@ import MockInbox from './components/MockInbox';
 import SenderSignatureModal from './components/SenderSignatureModal';
 import ConfirmationModal from './components/ConfirmationModal';
 import SignaturePortal from './components/SignaturePortal';
+import DocuSignAgentModal from './components/DocuSignAgentModal';
 import LoginScreen from './components/LoginScreen';
 import UserManagement from './components/UserManagement';
-import { auth } from './firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { SharePointMigrationModal } from './components/SharePointMigrationModal';
+import { StandaloneAppModal } from './components/StandaloneAppModal';
+import ErrorBoundary from './components/ErrorBoundary';
 import { apiService } from './services/apiService';
+import { msalService } from './services/msalService';
+import { urlService } from './services/urlService';
 import { MERCADO_PAGO_URL } from './constants';
 import { generateAssetPDF, getPDFFileName } from './services/pdfService';
 import { generatePromptPDF } from './services/promptPdfService';
@@ -28,12 +32,15 @@ const App: React.FC = () => {
   const [editingExchange, setEditingExchange] = useState<AssetExchange | null>(null);
   const [signingExchange, setSigningExchange] = useState<AssetExchange | null>(null);
   const [portalExchange, setPortalExchange] = useState<AssetExchange | null>(null);
+  const [agentExchange, setAgentExchange] = useState<AssetExchange | null>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [itemToComplete, setItemToComplete] = useState<string | null>(null);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSharePointModalOpen, setIsSharePointModalOpen] = useState(false);
+  const [isStandaloneModalOpen, setIsStandaloneModalOpen] = useState(false);
   const [showStartScreen, setShowStartScreen] = useState(() => {
     return window.location.hash === '#fullscreen';
   });
@@ -63,6 +70,34 @@ const App: React.FC = () => {
     return saved === 'true';
   });
 
+  // Assinatura direta para o destinatário via link de e-mail / Outlook (?sign=ID ou ?envelope=ID)
+  const [directSigningExchange, setDirectSigningExchange] = useState<AssetExchange | null>(null);
+  const [directSigningLoading, setDirectSigningLoading] = useState(false);
+  const [directSigningCompleted, setDirectSigningCompleted] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const signId = params.get('sign') || params.get('envelope');
+    if (signId) {
+      setDirectSigningLoading(true);
+      apiService.getExchangeById(signId)
+        .then(ex => {
+          if (ex) {
+            setDirectSigningExchange(ex);
+            if (ex.status === 'completed' || Boolean(ex.assinatura_colaborador)) {
+              setDirectSigningCompleted(true);
+            }
+          }
+        })
+        .catch(err => {
+          console.warn('[DocuSign] Erro ao carregar termo para assinatura direta:', err);
+        })
+        .finally(() => {
+          setDirectSigningLoading(false);
+        });
+    }
+  }, []);
+
   const actualIsAdmin = currentUser?.isAdmin;
   const effectiveIsAdmin = actualIsAdmin && !isSimulatingUser;
 
@@ -71,66 +106,70 @@ const App: React.FC = () => {
   }, [isSimulatingUser]);
 
   useEffect(() => {
-    // Check for simulated session first (for APK/Local mode)
-    const savedSession = localStorage.getItem('assetflow_auth_simulation');
-    if (savedSession) {
-      try {
-        const user = JSON.parse(savedSession);
-        setCurrentUser(user);
-        setUserName(user.username);
-        setNameInput(user.username);
+    // Validação e higienização de sessão corporativa Microsoft 365
+    const sanitizeUser = (user: User): User | null => {
+      if (!user || !user.email) return null;
+      const email = user.email.toLowerCase().trim();
+      const isCorporate = 
+        email.endsWith('@ciriontechnologies.com') ||
+        email.endsWith('@cirion.com') ||
+        email.endsWith('@ciriontechnologies.onmicrosoft.com') ||
+        email === 'gibasuporte@gmail.com';
+      
+      if (!isCorporate) {
+        return null;
+      }
+
+      // Exclusividade de Administrador do Sistema para Gilberto Araújo
+      const isSystemAdmin = 
+        email === 'gilberto.araujo.ext@ciriontechnologies.com' ||
+        email === 'gilberto.araujo.ext' ||
+        email === 'gibasuporte@gmail.com';
+
+      return {
+        ...user,
+        isAdmin: isSystemAdmin,
+        authProvider: 'microsoft'
+      };
+    };
+
+    // Check for Microsoft 365 Entra ID / Authenticator session first
+    const m365Session = msalService.getCurrentSession();
+    const validM365User = m365Session ? sanitizeUser(m365Session) : null;
+
+    if (validM365User) {
+      setCurrentUser(validM365User);
+      setUserName(validM365User.username);
+      setNameInput(validM365User.username);
+      setIsAuthReady(true);
+    } else {
+      // Check for saved session
+      const savedSession = localStorage.getItem('cirion_m365_session') || localStorage.getItem('assetflow_auth_simulation');
+      if (savedSession) {
+        try {
+          const user = JSON.parse(savedSession);
+          const validUser = sanitizeUser(user);
+          if (validUser) {
+            setCurrentUser(validUser);
+            setUserName(validUser.username);
+            setNameInput(validUser.username);
+          } else {
+            localStorage.removeItem('assetflow_auth_simulation');
+            localStorage.removeItem('cirion_m365_session');
+            setCurrentUser(null);
+          }
+          setIsAuthReady(true);
+        } catch (e) {
+          localStorage.removeItem('assetflow_auth_simulation');
+          localStorage.removeItem('cirion_m365_session');
+          setCurrentUser(null);
+          setIsAuthReady(true);
+        }
+      } else {
+        setCurrentUser(null);
         setIsAuthReady(true);
-      } catch (e) {
-        localStorage.removeItem('assetflow_auth_simulation');
       }
     }
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
-      // If we already have a simulated user, don't let Firebase auth override it 
-      // unless there's an actual firebase user (rare in APK but possible)
-      if (fbUser) {
-        localStorage.removeItem('assetflow_auth_simulation'); // Clear simulation if real auth detected
-        let userProfile = await apiService.getUserById(fbUser.uid);
-        
-        // Root Admin Check (Bypass for owner)
-        const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'gibasuporte@gmail.com').toLowerCase();
-        const loggedEmail = fbUser.email?.toLowerCase();
-        const profileEmail = userProfile?.email?.toLowerCase();
-        
-        const isRootAdmin = 
-          loggedEmail === adminEmail || 
-          loggedEmail === 'gibasuporte@gmail.com' || 
-          profileEmail === adminEmail || 
-          profileEmail === 'gibasuporte@gmail.com' ||
-          userProfile?.username?.toLowerCase() === 'administrador desktop';
-        
-        if (isRootAdmin) {
-          if (!userProfile) {
-            // Auto-create profile if missing for admin
-            userProfile = { 
-              id: fbUser.uid, 
-              username: fbUser.displayName || 'Root Admin', 
-              isAdmin: true, 
-              email: fbUser.email || adminEmail 
-            };
-            await apiService.saveUser(userProfile);
-          } else if (!userProfile.isAdmin) {
-            // Auto-promote if not admin
-            userProfile.isAdmin = true;
-            await apiService.saveUser(userProfile);
-          }
-        }
-
-        if (userProfile) {
-          setCurrentUser(userProfile);
-          setUserName(userProfile.username);
-          setNameInput(userProfile.username);
-        }
-      } else if (!localStorage.getItem('assetflow_auth_simulation')) {
-        setCurrentUser(null);
-      }
-      setIsAuthReady(true);
-    });
 
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -138,7 +177,6 @@ const App: React.FC = () => {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     
     return () => {
-      unsubscribeAuth();
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, []);
@@ -175,36 +213,13 @@ const App: React.FC = () => {
     }
   };
 
-  const handleShareLink = () => {
-    // Prioridade: SHARED_APP_URL (Produção) > APP_URL (Desenvolvimento) > Origin atual
-    const sharedBase = (window as any).SHARED_APP_URL || (window as any).APP_URL || window.location.origin;
-    
-    let finalUrl = sharedBase;
-    
-    // Se for uma URL do AI Studio (wrapper), adiciona os parâmetros de controle
-    if (sharedBase.includes('aistudio.google.com')) {
-      const url = new URL(sharedBase);
-      url.searchParams.set('fullscreenApplet', 'true');
-      url.searchParams.set('showPreview', 'true');
-      url.searchParams.set('showFullscreenButton', 'false');
-      url.searchParams.set('showAssistant', 'false');
-      url.hash = 'fullscreen';
-      finalUrl = url.toString();
+  const handleShareLink = async () => {
+    const standaloneUrl = urlService.getStandaloneAppUrl();
+    const copied = await urlService.copyStandaloneLink();
+    if (copied) {
+      showNotification("Link para rodar fora da plataforma copiado com sucesso!", "success");
     } else {
-      // Para URLs .run.app (diretas), apenas garante o modo tela cheia via hash
-      const url = new URL(sharedBase);
-      url.hash = 'fullscreen';
-      finalUrl = url.toString();
-    }
-    
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(finalUrl).then(() => {
-        showNotification("Link do AssetFlow copiado com sucesso!", "success");
-      }).catch(() => {
-        prompt("Copie o link do seu aplicativo:", finalUrl);
-      });
-    } else {
-      prompt("Copie o link do seu aplicativo:", finalUrl);
+      setIsStandaloneModalOpen(true);
     }
   };
 
@@ -233,7 +248,8 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     localStorage.removeItem('assetflow_auth_simulation');
-    await signOut(auth);
+    localStorage.removeItem('cirion_m365_session');
+    msalService.logout();
     setCurrentUser(null);
     setCurrentView('form');
   };
@@ -309,14 +325,8 @@ const App: React.FC = () => {
       setCurrentView('inventory');
 
       if (isDocuSignDirect) {
-        if (activeExchange.assinatura_ti) {
-          showNotification("Registro gravado. Iniciando envio automático para o DocuSign...", "success");
-          await handleSendDocuSignAutomaticFromApp(activeExchange);
-        } else {
-          setDocusignPendingAfterSignature(activeExchange.id);
-          setSigningExchange(activeExchange);
-          showNotification("Registro gravado. Por favor, confirme sua assinatura (TI) para disparar ao DocuSign.", "success");
-        }
+        showNotification("Registro gravado. Ativando o Agente DocuSign & Outlook...", "success");
+        setAgentExchange(activeExchange);
       } else {
         showNotification("Registro gravado.");
       }
@@ -409,35 +419,83 @@ const App: React.FC = () => {
       const updated: AssetExchange = { 
         ...portalExchange, 
         assinatura_colaborador: signature, 
-        status: 'completed' 
+        status: 'completed',
+        docusign_status: 'completed'
       };
       
-      await apiService.save(updated);
+      const pdf = generateAssetPDF(updated, logoPref);
+      let pdfBase64 = '';
+      if (pdf) {
+        // Baixa no navegador do usuário
+        try {
+          pdf.save(getPDFFileName(updated));
+        } catch (e) {
+          console.warn('Falha no download local:', e);
+        }
+        pdfBase64 = pdf.output('datauristring');
+      }
+
+      // Envia confirmação de assinatura do destinatário para o backend
+      try {
+        await apiService.submitRecipientSignature(
+          portalExchange.id,
+          signature,
+          portalExchange.colaborador_nome,
+          pdfBase64
+        );
+      } catch (submitErr) {
+        console.warn('Fallback submitRecipientSignature:', submitErr);
+        await apiService.save(updated);
+      }
       
       // Atualiza o estado local imediatamente
       setExchanges(prev => prev.map(e => e.id === updated.id ? updated : e));
       
-      const pdf = generateAssetPDF(updated, logoPref);
-      if (pdf) {
-        // Baixa no navegador do usuário
-        pdf.save(getPDFFileName(updated));
-        
-        // Salva na pasta local / OneDrive configurada no servidor backend
-        try {
-          const pdfBase64 = pdf.output('datauristring');
-          const saveRes = await apiService.saveSignedPDF(getPDFFileName(updated), pdfBase64);
-          console.log('[DocuSign Client] PDF final com assinaturas enviado e salvo no OneDrive:', saveRes.path);
-        } catch (saveErr) {
-          console.error('[DocuSign Client] Erro ao salvar cópia de backup do PDF final no servidor:', saveErr);
-        }
-      }
-
-      showNotification("Assinatura confirmada e registrada com sucesso! Documento salvo na pasta de ativos.", "success");
+      showNotification("Assinatura confirmada e registrada com sucesso! Documento arquivado.", "success");
     } catch (error: any) {
       showNotification("Erro ao finalizar assinatura: " + error.message, "error");
     } finally {
       setIsLoading(false);
       setPortalExchange(null);
+    }
+  };
+
+  const handleDirectCollaboratorSignature = async (signature: string) => {
+    if (!directSigningExchange) return;
+    setIsLoading(true);
+    try {
+      const updated: AssetExchange = {
+        ...directSigningExchange,
+        assinatura_colaborador: signature,
+        status: 'completed',
+        docusign_status: 'completed'
+      };
+
+      const pdf = generateAssetPDF(updated, logoPref);
+      let pdfBase64 = '';
+      if (pdf) {
+        try {
+          pdf.save(getPDFFileName(updated));
+        } catch (e) {
+          console.warn('Falha no download do PDF direto:', e);
+        }
+        pdfBase64 = pdf.output('datauristring');
+      }
+
+      await apiService.submitRecipientSignature(
+        directSigningExchange.id,
+        signature,
+        directSigningExchange.colaborador_nome,
+        pdfBase64
+      );
+
+      setDirectSigningExchange(updated);
+      setDirectSigningCompleted(true);
+      showNotification("Assinatura confirmada e registrada com sucesso!", "success");
+    } catch (err: any) {
+      showNotification("Erro ao registrar assinatura: " + err.message, "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -518,6 +576,89 @@ const App: React.FC = () => {
       setIsAiAnalyzing(false);
     }
   };
+
+  // Portal dedicado para o Destinatário via Link externo (?sign=ID ou ?envelope=ID)
+  if (directSigningLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#001a4e] text-white p-6">
+        <Loader2 className="animate-spin text-blue-400 mb-4" size={48} />
+        <h2 className="text-lg font-bold">Carregando Termo de Responsabilidade...</h2>
+        <p className="text-xs text-blue-200 mt-1">Conectando aos serviços DocuSign & SharePoint M365 Cirion</p>
+      </div>
+    );
+  }
+
+  if (directSigningExchange) {
+    return (
+      <div className="min-h-screen bg-[#001a4e] flex items-center justify-center p-4">
+        {directSigningCompleted ? (
+          <div className="bg-white dark:bg-slate-900 max-w-lg w-full rounded-3xl p-8 text-center space-y-5 shadow-2xl border border-blue-400/20 animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle2 size={36} />
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+                Assinatura Registrada
+              </span>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white">
+                Termo Assinado com Sucesso!
+              </h2>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Olá, <strong>{directSigningExchange.colaborador_nome}</strong>! Sua assinatura foi vinculada eletronicamente e o termo de responsabilidade foi arquivado no SharePoint da Cirion Technologies.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200/60 dark:border-slate-700 text-left text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Equipamento:</span>
+                <span className="font-bold text-slate-800 dark:text-white">{directSigningExchange.entregue_tipo || 'Notebook TI'}</span>
+              </div>
+              {directSigningExchange.entregue_serial && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Serial:</span>
+                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{directSigningExchange.entregue_serial}</span>
+                </div>
+              )}
+              {directSigningExchange.docusign_envelope_id && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">DocuSign ID:</span>
+                  <span className="font-mono text-[11px] text-slate-600 dark:text-slate-300">{directSigningExchange.docusign_envelope_id}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const pdf = generateAssetPDF(directSigningExchange, logoPref);
+                  if (pdf) pdf.save(getPDFFileName(directSigningExchange));
+                }}
+                className="w-full py-3.5 bg-[#003087] hover:bg-[#002266] text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+              >
+                <Download size={16} /> Baixar Cópia do Termo (PDF)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDirectSigningExchange(null)}
+                className="w-full py-2.5 text-slate-500 hover:text-slate-800 dark:hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Acessar AssetFlow Geral
+              </button>
+            </div>
+          </div>
+        ) : (
+          <SignaturePortal
+            exchange={directSigningExchange}
+            logoPref={logoPref}
+            onSave={handleDirectCollaboratorSignature}
+            onCancel={() => setDirectSigningExchange(null)}
+          />
+        )}
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return <LoginScreen onLogin={(user) => {
@@ -654,6 +795,26 @@ const App: React.FC = () => {
                {isSimulatingUser ? 'REATIVAR MODO ADMIN' : 'SIMULAR VISÃO USUÁRIO'}
              </button>
            )}
+
+           <button 
+             type="button"
+             onClick={() => setIsStandaloneModalOpen(true)}
+             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 mb-2 rounded-xl border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 text-xs font-bold transition-all cursor-pointer shadow-sm"
+             title="Executar aplicativo fora da plataforma de desenvolvimento em aba dedicada"
+           >
+             <ExternalLink size={14} />
+             <span>Rodar Fora da Plataforma</span>
+           </button>
+
+           <button 
+             type="button"
+             onClick={() => setIsSharePointModalOpen(true)}
+             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 mb-3 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 text-xs font-bold transition-all cursor-pointer shadow-sm"
+             title="Governança de Dados Cirion e Status da Base SharePoint M365"
+           >
+             <Database size={14} />
+             <span>Base SharePoint M365</span>
+           </button>
            <div className="flex items-center gap-2 mb-4">
              <button 
                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} 
@@ -717,11 +878,62 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 md:p-10 space-y-8 transition-all duration-300">
           <header className="space-y-1">
             <h2 className="text-3xl font-extrabold tracking-tight flex items-center justify-between w-full">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 flex-wrap">
                 {currentView === 'form' ? 'Gestão de Ativos' : currentView === 'inventory' ? 'Inventário' : currentView === 'inbox' ? 'Outlook' : 'Gestão de Usuários'}
                 <span className="text-xs font-bold px-3 py-1.5 bg-slate-100 dark:bg-white/5 rounded-xl text-slate-400 border border-slate-200 dark:border-white/10 uppercase tracking-widest">
                   {userName}
                 </span>
+
+                <div 
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-600 dark:text-sky-400 font-bold text-xs"
+                  title="Base de Dados Oficial Microsoft 365 SharePoint Online ativa e operando em conformidade com as diretrizes de TI"
+                >
+                  <Database size={13} className="text-sky-500" />
+                  <span>SharePoint M365: {exchanges.length} Ativos</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsSharePointModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-500/10 hover:bg-slate-500/20 border border-slate-500/30 text-slate-600 dark:text-slate-300 font-bold text-xs transition-all shadow-sm cursor-pointer"
+                  title="Painel de Governança e Configurações do SharePoint Online M365"
+                >
+                  <Database size={13} className="text-sky-500" />
+                  <span>Governança SharePoint</span>
+                </button>
+
+                <div 
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold text-xs"
+                  title="Autenticação Corporativa Cirion com Microsoft Authenticator (MFA) verificada"
+                >
+                  <Smartphone size={13} className="text-emerald-500" />
+                  <span>MFA Cirion Ativo</span>
+                </div>
+
+                {/* Ações para Executar Fora da Plataforma de Desenvolvimento */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsStandaloneModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-600 dark:text-sky-300 font-bold text-xs transition-all shadow-sm cursor-pointer"
+                    title="Opções de Link para Executar Fora da Plataforma de Desenvolvimento"
+                  >
+                    <Globe size={13} className="text-sky-500" />
+                    <span>Rodar Fora da Plataforma</span>
+                  </button>
+
+                  <a
+                    href={urlService.getStandaloneAppUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-sky-900/30 transition-all cursor-pointer"
+                    title="Abrir o AssetFlow diretamente em uma nova aba do navegador"
+                  >
+                    <ExternalLink size={13} />
+                    <span>Nova Aba</span>
+                  </a>
+                </div>
               </div>
               {currentView === 'inventory' && (
                 <button 
@@ -747,27 +959,30 @@ const App: React.FC = () => {
               />
             )}
             {currentView === 'inventory' && (
-              <InventoryTable 
-                exchanges={exchanges} 
-                onDelete={handleDeleteRequest} 
-                onEdit={(ex) => { setEditingExchange(ex); setCurrentView('form'); }} 
-                onNotify={showNotification}
-                onSignStart={(ex) => {
-                  if (!ex.assinatura_ti) {
-                    setSigningExchange(ex);
-                  } else {
-                    setPortalExchange(ex);
-                  }
-                }}
-                onStatusChange={handleStatusChange}
-                onCompleteRequest={handleCompleteRequest}
-                onBulkImport={(data) => { 
-                   Promise.all(data.map(item => apiService.save(item))).then(() => {
-                      showNotification("Importação concluída!", "success");
-                   }).catch(() => showNotification("Erro na importação", "error"));
-                }}
-                logoPref={logoPref}
-              />
+              <ErrorBoundary fallbackTitle="Falha ao carregar a tabela de inventário">
+                <InventoryTable 
+                  exchanges={exchanges} 
+                  onDelete={handleDeleteRequest} 
+                  onEdit={(ex) => { setEditingExchange(ex); setCurrentView('form'); }} 
+                  onNotify={showNotification}
+                  onSignStart={(ex) => {
+                    if (!ex.assinatura_ti) {
+                      setSigningExchange(ex);
+                    } else {
+                      setPortalExchange(ex);
+                    }
+                  }}
+                  onStatusChange={handleStatusChange}
+                  onCompleteRequest={handleCompleteRequest}
+                  onBulkImport={(data) => { 
+                     Promise.all(data.map(item => apiService.save(item))).then(() => {
+                        showNotification("Importação concluída!", "success");
+                     }).catch(() => showNotification("Erro na importação", "error"));
+                  }}
+                  logoPref={logoPref}
+                  onTriggerAgent={(ex) => setAgentExchange(ex)}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'inbox' && (
               <MockInbox 
@@ -776,6 +991,7 @@ const App: React.FC = () => {
                 exchanges={exchanges}
                 onOpenPortal={(ex) => setPortalExchange(ex)}
                 logoPref={logoPref}
+                onNotify={showNotification}
               />
             )}
             {currentView === 'users' && currentUser.isAdmin && (
@@ -784,6 +1000,30 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {agentExchange && (
+        <DocuSignAgentModal
+          exchange={agentExchange}
+          logoPref={logoPref}
+          currentUserName={userName}
+          onClose={() => setAgentExchange(null)}
+          onComplete={(updatedEx, mockEmail) => {
+            setExchanges(prev => prev.map(e => e.id === updatedEx.id ? updatedEx : e));
+            if (mockEmail) {
+              setEmails(prev => [mockEmail, ...prev.filter(e => e.id !== mockEmail.id)]);
+            }
+            showNotification(`Agente DocuSign & Outlook despachou o processo com sucesso! ID: ${updatedEx.docusign_envelope_id}`, 'success');
+          }}
+          onOpenInbox={(_exId) => {
+            setAgentExchange(null);
+            setCurrentView('inbox');
+          }}
+          onOpenSignReceiverNow={(ex) => {
+            setAgentExchange(null);
+            setPortalExchange(ex);
+          }}
+        />
+      )}
 
       {signingExchange && <SenderSignatureModal exchange={signingExchange} onClose={() => setSigningExchange(null)} onConfirm={(id, sig) => handleSignSender(id, sig)} />}
       
@@ -864,6 +1104,18 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+      <SharePointMigrationModal 
+        isOpen={isSharePointModalOpen}
+        onClose={() => setIsSharePointModalOpen(false)}
+        currentExchanges={exchanges}
+        onMigrationComplete={() => {
+          showNotification("Base sincronizada com o Microsoft 365 SharePoint Online!", "success");
+        }}
+      />
+      <StandaloneAppModal
+        isOpen={isStandaloneModalOpen}
+        onClose={() => setIsStandaloneModalOpen(false)}
+      />
       {showStartScreen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center bg-slate-900 text-white">
           <div className="text-center space-y-8 p-8 max-w-md animate-in fade-in zoom-in duration-500">

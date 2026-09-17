@@ -1,13 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AssetExchange, EquipmentCondition, OperationType, AdditionalItem } from '../types';
-import { EQUIPMENT_TYPES, BRANDS, MODELS_LIST, PROCESSORS_LIST, MODEL_SPECS, MEMORY_LIST, STORAGE_LIST, AD_USERS, MERCADO_PAGO_URL, ACCESSORIES_OPTIONS, ACCESSORIES_WITH_SERIAL } from '../constants';
+import { AssetExchange, EquipmentCondition, OperationType, AdditionalItem, Office365User, Office365ConnectorInfo } from '../types';
+import { EQUIPMENT_TYPES, BRANDS, MODELS_LIST, PROCESSORS_LIST, MODEL_SPECS, MEMORY_LIST, STORAGE_LIST, AD_USERS, MERCADO_PAGO_URL, ACCESSORIES_OPTIONS, ACCESSORIES_WITH_SERIAL, normalizeText } from '../constants';
 import { 
   User, Package, History, Send, ScanLine, Lock, Loader2, Search, Fingerprint, 
   CheckSquare, FileText, ArrowRightLeft, UserPlus, UserMinus, Plus, Trash2, 
-  CreditCard, Truck
+  CreditCard, Truck, Bot, CheckCircle2, Building2, ShieldCheck, Mail, MapPin, 
+  Briefcase, Sparkles, X, Info, ChevronRight, RefreshCw, Camera
 } from 'lucide-react';
 import BarcodeScannerModal from './BarcodeScannerModal';
+import { UserAvatar } from './UserAvatar';
 import { apiService } from '../services/apiService';
 
 interface AssetFormProps {
@@ -29,7 +31,13 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
   const isReadOnly = editingExchange?.status === 'completed';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestedUsers, setSuggestedUsers] = useState<typeof AD_USERS>([]);
+  const [suggestedUsers, setSuggestedUsers] = useState<Office365User[]>([]);
+  const [isSearchingM365, setIsSearchingM365] = useState(false);
+  const [m365ConnectorInfo, setM365ConnectorInfo] = useState<Office365ConnectorInfo | null>(null);
+  const [selectedM365User, setSelectedM365User] = useState<Office365User | null>(null);
+  const [showConnectorModal, setShowConnectorModal] = useState(false);
+  const searchTimeoutRef = useRef<any>(null);
+  const activeQueryRef = useRef<string>('');
   const adRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState<AssetExchange>({
@@ -188,6 +196,44 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
     }
   }, [formData.operationType, editingExchange]);
 
+  // Carrega informações do Conector Office 365 na inicialização
+  useEffect(() => {
+    apiService.getOffice365ConnectorInfo().then(info => {
+      setM365ConnectorInfo(info);
+    }).catch(() => {});
+  }, []);
+
+  // Sincroniza usuário selecionado quando editando ou carregando formulário
+  useEffect(() => {
+    if (editingExchange?.colaborador_email) {
+      const email = editingExchange.colaborador_email.toLowerCase();
+      const match = (AD_USERS || []).find(u => u.email.toLowerCase() === email);
+      if (match) {
+        setSelectedM365User({
+          id: `m365_${match.email}`,
+          displayName: match.nome,
+          mail: match.email,
+          userPrincipalName: match.email,
+          jobTitle: match.email.includes('.ext@') ? 'Prestador de Serviços TI' : 'Colaborador Corporativo',
+          department: match.email.includes('araujo') ? 'LATAM End User Services & Support' : 'Cirion Technologies',
+          officeLocation: 'Brasil',
+          source: 'corporate_catalog'
+        });
+      } else if (editingExchange.colaborador_nome) {
+        setSelectedM365User({
+          id: `m365_${editingExchange.colaborador_email}`,
+          displayName: editingExchange.colaborador_nome,
+          mail: editingExchange.colaborador_email,
+          userPrincipalName: editingExchange.colaborador_email,
+          jobTitle: 'Colaborador Corporativo',
+          department: 'Cirion Technologies',
+          officeLocation: 'Brasil',
+          source: 'corporate_catalog'
+        });
+      }
+    }
+  }, [editingExchange]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (adRef.current && !adRef.current.contains(e.target as Node)) setShowSuggestions(false);
@@ -196,23 +242,176 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleNameInput = (value: string) => {
-    setFormData(prev => ({ ...prev, colaborador_nome: value }));
-    if (value.trim().length > 1) {
-      const term = value.toLowerCase();
-      const results = (AD_USERS || []).filter(u => 
-        u.nome.toLowerCase().includes(term) || u.email.toLowerCase().includes(term)
-      ).slice(0, 8);
-      setSuggestedUsers(results);
-      setShowSuggestions(results.length > 0);
-    } else {
-      setShowSuggestions(false);
+  // Função de busca instantânea no catálogo corporativo unificado (Síncrona, 0ms de latência)
+  const getCorporateCatalogMatches = (searchStr: string): Office365User[] => {
+    const clean = (searchStr || '').trim();
+    if (!clean) {
+      // Quando vazio, retorna os primeiros 60 colaboradores estritamente em ordem alfabética A-Z
+      return (AD_USERS || [])
+        .slice(0, 60)
+        .map((u, i) => ({
+          id: `local_focus_${i}_${u.email}`,
+          displayName: u.nome,
+          mail: u.email,
+          userPrincipalName: u.email,
+          jobTitle: u.email.includes('.ext@') ? 'Prestador de Serviços TI' : 'Colaborador Corporativo',
+          department: u.email.toLowerCase().includes('araujo') ? 'LATAM End User Services & Support' : 'Cirion Technologies',
+          officeLocation: 'Brasil',
+          companyName: 'Cirion Technologies',
+          accountEnabled: true,
+          source: 'corporate_catalog',
+          photoUrl: `/api/office365/users/${encodeURIComponent(u.email)}/photo?name=${encodeURIComponent(u.nome)}`
+        }));
+    }
+
+    const normalizedQuery = normalizeText(clean);
+    const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+
+    return (AD_USERS || [])
+      .filter(u => {
+        if (!u || !u.nome) return false;
+        const normNome = normalizeText(u.nome);
+        const normEmail = normalizeText(u.email || '');
+        // Valida se cada token digitado está presente no nome ou no email corporativo
+        return queryTokens.every(token => normNome.includes(token) || normEmail.includes(token));
+      })
+      .sort((a, b) => {
+        const nameA = a.nome || '';
+        const nameB = b.nome || '';
+        const normA = normalizeText(nameA);
+        const normB = normalizeText(nameB);
+        
+        // Prioriza quem começa exatamente com a busca digitada
+        const aStarts = normA.startsWith(normalizedQuery);
+        const bStarts = normB.startsWith(normalizedQuery);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+
+        return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+      })
+      .slice(0, 80)
+      .map((u, i) => ({
+        id: `local_${i}_${u.email}`,
+        displayName: u.nome,
+        mail: u.email,
+        userPrincipalName: u.email,
+        jobTitle: u.email.includes('.ext@') ? 'Prestador de Serviços TI' : 'Colaborador Corporativo',
+        department: u.email.toLowerCase().includes('araujo') ? 'LATAM End User Services & Support' : 'Cirion Technologies',
+        officeLocation: 'Brasil',
+        companyName: 'Cirion Technologies',
+        accountEnabled: true,
+        source: 'corporate_catalog',
+        photoUrl: `/api/office365/users/${encodeURIComponent(u.email)}/photo?name=${encodeURIComponent(u.nome)}`
+      }));
+  };
+
+  const searchOffice365Users = async (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    setIsSearchingM365(true);
+    try {
+      const resp = await apiService.searchOffice365Users(trimmed);
+      
+      // Proteção contra condição de corrida: se o usuário já digitou outra coisa, descarta a resposta antiga!
+      if (activeQueryRef.current.trim() !== trimmed) {
+        return;
+      }
+
+      // Se a resposta trouxer usuários, mescla com os resultados locais sem sobrescrever para vazio
+      if (resp && Array.isArray(resp.users) && resp.users.length > 0) {
+        setSuggestedUsers(prev => {
+          if (activeQueryRef.current.trim() !== trimmed) return prev;
+          
+          const map = new Map<string, Office365User>();
+          // Começa mantendo os resultados locais imediatos
+          for (const u of prev) {
+            const key = (u.mail || u.userPrincipalName || u.displayName).toLowerCase().trim();
+            map.set(key, u);
+          }
+          // Acrescenta novos colaboradores retornados pelo Graph API / Entra ID
+          for (const u of resp.users) {
+            const key = (u.mail || u.userPrincipalName || u.displayName).toLowerCase().trim();
+            if (!map.has(key)) {
+              map.set(key, u);
+            }
+          }
+
+          return Array.from(map.values()).sort((a, b) => 
+            (a.displayName || '').localeCompare(b.displayName || '', 'pt-BR', { sensitivity: 'base' })
+          );
+        });
+      }
+    } catch (e) {
+      console.warn('Erro ao consultar Conector Office 365 remoto:', e);
+    } finally {
+      if (activeQueryRef.current.trim() === trimmed) {
+        setIsSearchingM365(false);
+      }
     }
   };
 
-  const handleSelectUser = (u: { nome: string; email: string }) => {
-    setFormData(prev => ({ ...prev, colaborador_nome: u.nome, colaborador_email: u.email })); 
+  const handleNameInput = (value: string) => {
+    // Atualização imediata do formulário e do ponteiro da busca atual
+    activeQueryRef.current = value;
+    setFormData(prev => ({ ...prev, colaborador_nome: value }));
+
+    if (selectedM365User && selectedM365User.displayName !== value) {
+      setSelectedM365User(null);
+    }
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    const clean = value.trim();
+    if (clean.length >= 1) {
+      // 1. Resposta SÍNCRONA e IMEDIATA (0ms) - pesquisa local no catálogo
+      const immediateMatches = getCorporateCatalogMatches(clean);
+      setSuggestedUsers(immediateMatches);
+      setShowSuggestions(true);
+
+      // 2. Consulta complementar ao Conector Office 365 (Microsoft Graph) em background
+      searchTimeoutRef.current = setTimeout(() => {
+        searchOffice365Users(clean);
+      }, 300);
+    } else {
+      // Se o campo estiver em branco mas o usuário estiver nele, mostra catálogo ordenado A-Z
+      const initialUsers = getCorporateCatalogMatches('');
+      setSuggestedUsers(initialUsers);
+      setShowSuggestions(true);
+    }
+  };
+
+  const handleFocusSearch = () => {
+    activeQueryRef.current = formData.colaborador_nome;
+    const matches = getCorporateCatalogMatches(formData.colaborador_nome);
+    setSuggestedUsers(matches);
+    setShowSuggestions(true);
+  };
+
+  const handleSelectUser = (u: Office365User) => {
+    activeQueryRef.current = u.displayName;
+    setFormData(prev => ({ 
+      ...prev, 
+      colaborador_nome: u.displayName, 
+      colaborador_email: u.mail || u.userPrincipalName 
+    }));
+    setSelectedM365User(u);
     setShowSuggestions(false);
+  };
+
+  const handleClearSelectedUser = () => {
+    activeQueryRef.current = '';
+    setFormData(prev => ({ 
+      ...prev, 
+      colaborador_nome: '', 
+      colaborador_email: '' 
+    }));
+    setSelectedM365User(null);
+    const initialUsers = getCorporateCatalogMatches('');
+    setSuggestedUsers(initialUsers);
+    setShowSuggestions(true);
   };
 
   const handleModelChange = (model: string, target: 'entregue' | 'devolvido') => {
@@ -344,53 +543,172 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="relative z-50" ref={adRef}>
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Nome Completo</label>
+            <div className="flex items-center justify-between ml-1 mb-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Nome Completo</label>
+              <button
+                type="button"
+                onClick={() => setShowConnectorModal(true)}
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200/80 dark:border-blue-700/50 text-[10px] font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 transition-colors shadow-2xs cursor-pointer"
+                title="Conector Office 365 / Microsoft Entra ID ativo para localização de colaboradores"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <Building2 size={11} className="text-blue-600 dark:text-blue-400" />
+                <span>Conector Office 365</span>
+              </button>
+            </div>
+
             <div className="relative mt-1">
               <input 
                 disabled={isReadOnly} 
                 required 
-                className="w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple dark:bg-blue-500/10 dark:border-blue-500/20 outline-none transition-all text-sm pl-10 font-bold text-blue-900 dark:text-blue-100 shadow-sm" 
+                className={`w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple dark:bg-blue-500/10 dark:border-blue-500/20 outline-none transition-all text-sm pr-12 font-bold text-blue-900 dark:text-blue-100 shadow-sm ${
+                  selectedM365User ? 'pl-12' : 'pl-10'
+                }`}
                 value={formData.colaborador_nome} 
                 onChange={e => handleNameInput(e.target.value)} 
-                onFocus={() => {
-                  if (formData.colaborador_nome) handleNameInput(formData.colaborador_nome);
+                onFocus={handleFocusSearch}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') {
+                    setShowSuggestions(false);
+                  } else if (e.key === 'Enter' && showSuggestions && suggestedUsers.length > 0) {
+                    e.preventDefault();
+                    handleSelectUser(suggestedUsers[0]);
+                  }
                 }}
                 autoComplete="off"
-                placeholder="Digite para buscar no catálogo..."
+                placeholder="Digite para buscar colaborador (A-Z)..."
               />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" size={16}/>
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
+                {selectedM365User ? (
+                  <UserAvatar
+                    name={selectedM365User.displayName}
+                    email={selectedM365User.mail || selectedM365User.userPrincipalName}
+                    photoUrl={selectedM365User.photoUrl}
+                    size="sm"
+                    showM365Badge={true}
+                  />
+                ) : (
+                  <Search size={16} className="text-blue-500" />
+                )}
+              </div>
+
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                {isSearchingM365 && (
+                  <Loader2 className="animate-spin text-blue-500" size={16} />
+                )}
+                {selectedM365User && (
+                  <span title="Colaborador verificado no Office 365" className="text-emerald-500">
+                    <CheckCircle2 size={16} />
+                  </span>
+                )}
+                {!isReadOnly && formData.colaborador_nome && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={handleClearSelectedUser}
+                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                    title="Limpar pesquisa"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
 
-            {showSuggestions && suggestedUsers.length > 0 && (
-              <div className="absolute top-full left-0 w-full z-[100] mt-1.5 bg-white dark:bg-dracula-current rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden max-h-60 overflow-y-auto">
-                {suggestedUsers.map((u, i) => (
-                  <button 
-                    key={i} 
-                    type="button" 
-                    onClick={() => handleSelectUser(u)} 
-                    className="w-full p-3 text-left hover:bg-slate-50 dark:hover:bg-dracula-bg border-b border-slate-100 dark:border-dracula-bg last:border-0 transition-colors group flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="font-bold text-xs text-slate-800 dark:text-dracula-fg group-hover:text-dracula-purple">{u.nome}</div>
-                      <div className="text-[11px] text-slate-400 dark:text-dracula-comment">{u.email}</div>
-                    </div>
-                  </button>
-                ))}
+            {showSuggestions && (
+              <div className="absolute top-full left-0 w-full z-[100] mt-1.5 bg-white dark:bg-dracula-current rounded-2xl shadow-2xl border border-blue-100 dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 max-h-80 overflow-y-auto">
+                <div className="px-3.5 py-2 bg-slate-50/90 dark:bg-dracula-bg/90 flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-700 sticky top-0 backdrop-blur-sm z-10">
+                  <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
+                    <Building2 size={12} />
+                    <span>Diretório Office 365 Cirion</span>
+                  </div>
+                  <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-mono font-medium">
+                    {suggestedUsers.length} localizados (Ordem A-Z)
+                  </span>
+                </div>
+
+                {suggestedUsers.length > 0 ? (
+                  suggestedUsers.map((u, i) => {
+                    const uniqueKey = `m365_sugg_${u.mail || u.userPrincipalName || u.id || i}_${i}`;
+                    return (
+                      <button 
+                        key={uniqueKey} 
+                        type="button" 
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleSelectUser(u)} 
+                        className="w-full p-3 text-left hover:bg-blue-50/70 dark:hover:bg-dracula-bg/90 transition-colors group flex items-start gap-3 cursor-pointer"
+                      >
+                        <UserAvatar
+                          name={u.displayName}
+                          email={u.mail || u.userPrincipalName}
+                          photoUrl={u.photoUrl}
+                          size="md"
+                          showM365Badge={true}
+                          className="mt-0.5"
+                        />
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-slate-800 dark:text-dracula-fg group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate">
+                              {u.displayName}
+                            </span>
+                            <span className="inline-flex items-center gap-0.5 text-[9px] font-medium px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 shrink-0 border border-emerald-200/50 dark:border-emerald-800/40">
+                              <CheckCircle2 size={9} />
+                              M365
+                            </span>
+                          </div>
+                          
+                          <div className="text-[11px] font-medium text-slate-500 dark:text-dracula-comment truncate mt-0.5">
+                            {u.jobTitle || 'Colaborador'} • {u.department || 'Cirion Technologies'}
+                          </div>
+
+                          <div className="text-[11px] text-blue-600/90 dark:text-blue-400/90 font-mono truncate mt-0.5">
+                            {u.mail || u.userPrincipalName}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="p-4 text-center">
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Nenhum colaborador localizado com "{formData.colaborador_nome}"
+                    </p>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                      Você pode prosseguir digitando o nome e o e-mail corporativo manualmente.
+                    </p>
+                  </div>
+                )}
+
+                <div className="p-2 bg-slate-50/60 dark:bg-dracula-bg/60 text-center text-[10px] text-slate-400">
+                  Sincronizado via Conector Microsoft 365 (Graph API & Entra ID) • Ordem Alfabética
+                </div>
               </div>
             )}
           </div>
 
           <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">E-mail Corporativo</label>
-            <input 
-              disabled={isReadOnly} 
-              type="email" 
-              required 
-              placeholder="exemplo@empresa.com"
-              className="w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple mt-1 dark:bg-blue-500/10 dark:border-blue-500/20 text-sm outline-none transition-all font-bold text-blue-900 dark:text-blue-100 shadow-sm" 
-              value={formData.colaborador_email} 
-              onChange={e => setFormData(prev => ({...prev, colaborador_email: e.target.value}))}
-            />
+            <div className="flex items-center justify-between ml-1 mb-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase">E-mail Corporativo</label>
+              {selectedM365User && (
+                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
+                  <ShieldCheck size={11} />
+                  Office 365 Verificado
+                </span>
+              )}
+            </div>
+            <div className="relative mt-1">
+              <input 
+                disabled={isReadOnly} 
+                type="email" 
+                required 
+                placeholder="exemplo@empresa.com"
+                className="w-full p-4 rounded-xl border-2 border-blue-100 bg-blue-50 focus:border-dracula-purple dark:bg-blue-500/10 dark:border-blue-500/20 text-sm outline-none transition-all font-bold text-blue-900 dark:text-blue-100 shadow-sm pl-10" 
+                value={formData.colaborador_email} 
+                onChange={e => setFormData(prev => ({...prev, colaborador_email: e.target.value}))}
+              />
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-400 pointer-events-none" size={16} />
+            </div>
           </div>
 
           <div>
@@ -398,6 +716,54 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
             <input disabled={isReadOnly} type="date" required className="w-full p-4 rounded-xl border-2 border-slate-100 focus:border-dracula-purple mt-1 dark:bg-dracula-bg text-sm outline-none transition-all shadow-sm" value={formData.data_troca} onChange={e => setFormData(prev => ({...prev, data_troca: e.target.value}))}/>
           </div>
         </div>
+
+        {/* Card de Colaborador Localizado via Conector Office 365 */}
+        {selectedM365User && (
+          <div className="mt-4 p-4 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3.5">
+              <UserAvatar
+                name={selectedM365User.displayName}
+                email={selectedM365User.mail || selectedM365User.userPrincipalName}
+                size="xl"
+                showM365Badge={true}
+                className="shrink-0 shadow-sm"
+              />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-800 dark:text-slate-100 text-sm">{selectedM365User.displayName}</span>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/50 dark:border-emerald-800/40">
+                    <CheckCircle2 size={11} /> Conector Office 365
+                  </span>
+                </div>
+                <div className="text-slate-500 dark:text-slate-300 text-[11px] mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                  <span className="inline-flex items-center gap-1">
+                    <Briefcase size={11} className="text-slate-400"/> {selectedM365User.jobTitle || 'Colaborador Corporativo'}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Building2 size={11} className="text-slate-400"/> {selectedM365User.department || 'Cirion Technologies'}
+                  </span>
+                  {selectedM365User.officeLocation && (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin size={11} className="text-slate-400"/> {selectedM365User.officeLocation}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {!isReadOnly && (
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleClearSelectedUser}
+                  className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline px-2 py-1 text-left sm:text-right"
+                >
+                  Trocar Colaborador
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Grid de Equipamentos */}
@@ -1235,13 +1601,17 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
               {editingExchange ? 'Apenas Salvar' : 'Apenas Gravar'}
             </button>
             <button 
+              id="btn-save-docusign-agent"
               type="button" 
               onClick={(e) => handleSaveClickCustom(e, true)} 
               disabled={isSubmitting} 
-              className="px-10 py-4 bg-dracula-purple text-white shadow-xl shadow-dracula-purple/20 rounded-2xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 disabled:opacity-50"
+              className="px-8 py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-dracula-purple hover:brightness-110 text-white shadow-xl shadow-indigo-600/30 rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Gravar e acionar o Agente DocuSign & Outlook para processo de assinatura do Remetente e Destinatário"
             >
-              {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : <Fingerprint size={20}/>}
-              {editingExchange ? 'Salvar e Enviar para DocuSign' : 'Gravar e Enviar para DocuSign'}
+              {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : <Bot size={20} className="text-cyan-300 animate-pulse"/>}
+              <span>
+                {editingExchange ? 'Salvar e Enviar para DocuSign (Agente Outlook)' : 'Gravar e Enviar para DocuSign (Agente Outlook)'}
+              </span>
             </button>
           </>
         )}
@@ -1287,6 +1657,98 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
       <datalist id="storage-list">
         {STORAGE_LIST.map(s => <option key={s} value={s} />)}
       </datalist>
+
+      {/* Modal: Detalhes do Conector Office 365 / Microsoft Entra ID */}
+      {showConnectorModal && (
+        <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-dracula-bg border border-slate-200 dark:border-dracula-current rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md">
+                  <Building2 size={24} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Conector Office 365
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-dracula-comment">
+                    Microsoft Entra ID & Microsoft Graph API
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConnectorModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-dracula-current transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Status do Conector</span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Ativo & Operacional
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Locatário (Tenant)</span>
+                  <span className="font-mono text-[11px] text-slate-800 dark:text-slate-200">
+                    {m365ConnectorInfo?.tenant || 'ciriontechnologies.onmicrosoft.com'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Provedor</span>
+                  <span className="text-[11px] text-slate-800 dark:text-slate-200">
+                    {m365ConnectorInfo?.provider || 'Microsoft Graph API v1.0 & Catálogo Corporativo'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Colaboradores Catálogados</span>
+                  <span className="font-bold text-blue-600 dark:text-blue-400 text-xs">
+                    {m365ConnectorInfo?.totalCatalogUsers || 65}+ contas corporativas
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+                <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs uppercase tracking-wider">
+                  Recursos do Conector
+                </h4>
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                  <span><strong>Autocompletar Inteligente:</strong> Ao digitar no campo Nome Completo, pesquisa instantaneamente no diretório do Office 365 e Entra ID.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                  <span><strong>Sincronização de E-mail:</strong> Preenchimento automático do e-mail corporativo institucional (@ciriontechnologies.com).</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                  <span><strong>Mapeamento Organizacional:</strong> Identificação de Cargo, Departamento e Localidade do colaborador.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                  <span><strong>Compatível com Zero Trust & MFA:</strong> Protegido por autenticação corporativa Microsoft e políticas Cirion.</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowConnectorModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-colors"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 };

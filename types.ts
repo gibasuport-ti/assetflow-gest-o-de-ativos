@@ -21,6 +21,7 @@ export interface AssetExchange {
   operationType: OperationType; // Novo campo
   status: 'draft' | 'pending_receiver' | 'completed';
   timestamp: number;
+  createdBy?: string;
   
   // Dados do Colaborador
   colaborador_nome: string;
@@ -81,10 +82,13 @@ export interface MockEmail {
   from: string;
   subject: string;
   body: string;
+  bodyHtml?: string;
   sentAt: string;
   read: boolean;
   exchangeId: string;
   attachment?: boolean;
+  envelopeId?: string;
+  signingUrl?: string;
 }
 
 export interface User {
@@ -93,6 +97,75 @@ export interface User {
   email?: string;
   password?: string;
   isAdmin: boolean;
+  mfaVerified?: boolean;
+  authProvider?: 'microsoft' | 'local' | 'firebase';
+  microsoftUpn?: string;
+  department?: string;
+  cirionTenant?: string;
+  lastMfaAuthTime?: string;
+  authMethod?: 'Microsoft Authenticator (App)' | 'FIDO2 / Windows Hello' | 'SMS / Voice' | 'Chave de Emergência' | 'Firebase Auth Direct';
+}
+
+export interface SharePointStatus {
+  configured: boolean;
+  tenantId?: string;
+  clientId?: string;
+  siteId?: string;
+  siteUrl?: string;
+  listName?: string;
+  usersListName?: string;
+  totalItems: number;
+  lastSync?: string;
+  mfaEnforced: boolean;
+  mode: 'sharepoint_online' | 'sharepoint_hybrid_cache' | 'local_sandbox' | 'sharepoint_webhook';
+  cirionSecurityCompliant: boolean;
+  webhookConfigured?: boolean;
+  connectionDetails?: string;
+  graphSiteResolved?: string;
+}
+
+export interface MigrationResult {
+  success: boolean;
+  totalExchangesMigrated: number;
+  totalUsersMigrated: number;
+  errors: string[];
+  timestamp: string;
+  target: string;
+  integrityHash?: string;
+}
+
+export interface AppUrls {
+  standaloneUrl: string;
+  sharedAppUrl: string;
+  devAppUrl: string;
+  githubPagesUrl: string;
+  isInIframe: boolean;
+  canInstallPwa?: boolean;
+}
+
+export interface Office365User {
+  id: string;
+  displayName: string;
+  mail: string;
+  userPrincipalName: string;
+  jobTitle?: string;
+  department?: string;
+  officeLocation?: string;
+  mobilePhone?: string;
+  companyName?: string;
+  accountEnabled?: boolean;
+  source: 'microsoft_graph' | 'azure_ad' | 'corporate_catalog';
+  photoUrl?: string;
+}
+
+export interface Office365ConnectorInfo {
+  connected: boolean;
+  name: string;
+  tenant: string;
+  provider: string;
+  status: 'online' | 'hybrid_active' | 'offline';
+  totalCatalogUsers: number;
+  lastSync?: string;
 }
 
 export type View = 'form' | 'inventory' | 'inbox' | 'users';

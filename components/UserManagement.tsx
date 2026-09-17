@@ -105,11 +105,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, onNotify }
           </button>
         </div>
 
-        <div className="bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/20 p-4 rounded-2xl flex items-start gap-3">
-          <ShieldAlert className="text-amber-500 shrink-0" size={20} />
-          <p className="text-xs text-amber-800 dark:text-amber-400 font-medium">
-            Novos usuários são criados automaticamente ao realizar o primeiro login social via Google. 
-            Você pode promover usuários a administradores nesta tela para liberar acesso ao painel de gestão.
+        <div className="bg-sky-50 dark:bg-sky-500/5 border border-sky-200 dark:border-sky-500/20 p-4 rounded-2xl flex items-start gap-3">
+          <ShieldAlert className="text-sky-500 shrink-0" size={20} />
+          <p className="text-xs text-sky-800 dark:text-sky-300 font-medium">
+            Conforme a política corporativa de segurança Cirion, o acesso ao AssetFlow é liberado exclusivamente para usuários corporativos autenticados no Microsoft 365 (@ciriontechnologies.com), sendo <strong>Gilberto Araújo</strong> (gilberto.araujo.ext@ciriontechnologies.com) o único Administrador do Sistema autorizado.
           </p>
         </div>
 

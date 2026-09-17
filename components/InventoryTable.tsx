@@ -1,10 +1,12 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { AssetExchange, LogoPreference } from '../types';
-import { FileDown, Trash2, Search, FileSpreadsheet, Pencil, Mail, Laptop, Smartphone, Cpu, Clock, Lock, FileCheck, Upload, Fingerprint, Filter, Download, Loader2, Send, FileText, ExternalLink, Truck } from 'lucide-react';
+import { FileDown, Trash2, Search, FileSpreadsheet, Pencil, Mail, Laptop, Smartphone, Cpu, Clock, Lock, FileCheck, Upload, Fingerprint, Filter, Download, Loader2, Send, FileText, ExternalLink, Truck, Bot, X } from 'lucide-react';
 import { generateAssetPDF, getPDFFileName } from '../services/pdfService';
 import { exportToExcel, importFromExcel } from '../services/excelService';
 import { apiService } from '../services/apiService';
+import { normalizeText } from '../constants';
+import { UserAvatar } from './UserAvatar';
 
 interface InventoryTableProps {
   exchanges: AssetExchange[];
@@ -16,9 +18,10 @@ interface InventoryTableProps {
   onCompleteRequest: (id: string) => void;
   onBulkImport: (data: AssetExchange[]) => void;
   logoPref: LogoPreference;
+  onTriggerAgent?: (exchange: AssetExchange) => void;
 }
 
-const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, onEdit, onNotify, onSignStart, onStatusChange, onCompleteRequest, onBulkImport, logoPref }) => {
+const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, onEdit, onNotify, onSignStart, onStatusChange, onCompleteRequest, onBulkImport, logoPref, onTriggerAgent }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
   const [isSendingDocuSign, setIsSendingDocuSign] = useState<string | null>(null);
@@ -102,11 +105,33 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
     window.open("https://apps.docusign.com/send/home", "_blank");
   };
 
-  const filtered = exchanges.filter(e => 
-    e.colaborador_nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    e.entregue_serial.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    e.devolvido_serial.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const clean = searchTerm.trim();
+    if (!clean) return exchanges;
+
+    const normQuery = normalizeText(clean);
+    const tokens = normQuery.split(/\s+/).filter(Boolean);
+
+    return exchanges.filter(e => {
+      const nome = normalizeText(e.colaborador_nome || '');
+      const email = normalizeText(e.colaborador_email || '');
+      const sEnt = normalizeText(e.entregue_serial || '');
+      const sDev = normalizeText(e.devolvido_serial || '');
+      const modEnt = normalizeText(e.entregue_modelo || '');
+      const modDev = normalizeText(e.devolvido_modelo || '');
+      const id = normalizeText(e.id || '');
+
+      return tokens.every(tok => 
+        nome.includes(tok) || 
+        email.includes(tok) || 
+        sEnt.includes(tok) || 
+        sDev.includes(tok) || 
+        modEnt.includes(tok) || 
+        modDev.includes(tok) || 
+        id.includes(tok)
+      );
+    });
+  }, [exchanges, searchTerm]);
 
   const handleImportClick = () => fileInputRef.current?.click();
 
@@ -136,10 +161,11 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
     }
   };
 
-  const getIcon = (type: string) => {
-    const t = type.toLowerCase();
-    if (t.includes('note')) return <Laptop size={14} />;
-    if (t.includes('smart')) return <Smartphone size={14} />;
+  const getIcon = (type?: string) => {
+    if (!type) return <Cpu size={14} />;
+    const t = String(type).toLowerCase();
+    if (t.includes('note') || t.includes('lap')) return <Laptop size={14} />;
+    if (t.includes('smart') || t.includes('cel') || t.includes('phone')) return <Smartphone size={14} />;
     return <Cpu size={14} />;
   };
 
@@ -151,11 +177,21 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input 
-            placeholder="Buscar..."
-            className="w-full pl-10 pr-4 py-3 rounded-2xl border bg-slate-50 dark:bg-dracula-bg dark:text-dracula-fg text-sm outline-none focus:ring-2 ring-dracula-purple/30"
+            placeholder="Buscar por colaborador, e-mail, número de série, modelo..."
+            className="w-full pl-10 pr-10 py-3 rounded-2xl border bg-slate-50 dark:bg-dracula-bg dark:text-dracula-fg text-sm outline-none focus:ring-2 ring-dracula-purple/30"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
           />
+          {searchTerm && (
+            <button 
+              type="button"
+              onClick={() => setSearchTerm('')} 
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-dracula-current transition-colors"
+              title="Limpar busca"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
         
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -163,17 +199,28 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
           <button onClick={handleImportClick} className="flex items-center gap-2 bg-slate-100 dark:bg-dracula-bg px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap"><Upload size={14}/> Importar</button>
           <button onClick={handleExportClick} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap"><FileSpreadsheet size={14}/> Excel</button>
           <button onClick={handleDocuSignClick} className="flex items-center gap-2 bg-dracula-pink/10 text-dracula-pink px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap border border-dracula-pink/20"><ExternalLink size={14}/> Abrir DocuSign</button>
-          <button className="flex items-center gap-2 bg-slate-100 dark:bg-dracula-bg px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap"><Filter size={14}/> Filtros</button>
+          <div className="ml-auto flex items-center px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-dracula-bg text-slate-600 dark:text-dracula-comment text-xs font-semibold whitespace-nowrap">
+            {filtered.length} {filtered.length === 1 ? 'ativo' : 'ativos'} {searchTerm && `(de ${exchanges.length})`}
+          </div>
         </div>
 
-        {/* Banner Informativo sobre a Automação do DocuSign Python */}
-        <div className="bg-dracula-purple/5 border border-dracula-purple/20 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Banner Informativo sobre a Automação e Assinatura Digital DocuSign */}
+        <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-dracula-purple/10 border border-indigo-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
           <div className="flex items-start gap-3">
-            <Fingerprint className="text-dracula-purple shrink-0 mt-0.5" size={20} />
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
+              <Bot size={20} className="text-cyan-200" />
+            </div>
             <div className="space-y-1">
-              <h4 className="text-xs font-bold text-slate-800 dark:text-dracula-fg">Automação de Assinatura via Python (DocuSign API)</h4>
-              <p className="text-[11px] text-slate-500 dark:text-dracula-comment leading-relaxed">
-                O envio automático é feito individualmente para cada registro de ativo no status <strong className="text-slate-700 dark:text-dracula-fg uppercase tracking-wider text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-dracula-bg">'Rascunho'</strong>. Procure pelo ícone de biometria <strong className="text-dracula-purple font-black">🟣 <Fingerprint className="inline" size={14} /></strong> na coluna de <strong>Ações</strong> na tabela de registros abaixo.
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs font-black text-slate-800 dark:text-dracula-fg uppercase tracking-wider">
+                  Fluxo de Assinatura Digital DocuSign & Outlook
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                  Agente Ativo
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-dracula-comment leading-relaxed">
+                Para enviar um termo para assinatura digital com protocolo oficial DocuSign, clique no ícone do robô <strong className="text-blue-600 dark:text-blue-400 font-bold">🤖 (Agente DocuSign)</strong> na coluna de <strong>Ações</strong> de qualquer item em <strong className="text-slate-700 dark:text-dracula-fg uppercase text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-dracula-bg">'Rascunho'</strong>, ou salve um novo registro usando o botão <em>"Gravar e Enviar para DocuSign"</em>.
               </p>
             </div>
           </div>
@@ -192,27 +239,76 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
             </tr>
           </thead>
           <tbody className="divide-y dark:divide-dracula-current">
-            {filtered.map(ex => (
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-16 text-center">
+                  <div className="flex flex-col items-center justify-center max-w-md mx-auto space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-dracula-bg flex items-center justify-center text-slate-400">
+                      <Search size={22} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-bold text-slate-700 dark:text-dracula-fg text-sm">
+                        {searchTerm ? 'Nenhum ativo encontrado para essa busca' : 'Nenhum ativo registrado no inventário'}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {searchTerm ? 'Verifique os termos pesquisados ou limpe o filtro.' : 'Cadastre um novo termo no menu "Nova Troca".'}
+                      </p>
+                    </div>
+                    {searchTerm && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchTerm('')}
+                        className="text-xs text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
+                      >
+                        Limpar busca
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              filtered.map(ex => (
               <tr key={ex.id} className="hover:bg-slate-50/50 dark:hover:bg-dracula-bg/50 transition-colors">
                 <td className="px-6 py-4">
-                  <div className="font-bold text-sm">{ex.colaborador_nome}</div>
-                  <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{ex.colaborador_email}</div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] font-bold text-emerald-600 flex items-center gap-1">{getIcon(ex.entregue_tipo)} {ex.entregue_tipo}</span>
-                    <div className="px-2 py-0.5 bg-blue-50 dark:bg-dracula-cyan/10 border border-blue-100 dark:border-dracula-cyan/20 rounded-md inline-block">
-                      <span className="text-[9px] font-mono font-bold text-blue-700 dark:text-dracula-cyan">{ex.entregue_serial}</span>
+                  <div className="flex items-center gap-2.5">
+                    <UserAvatar name={ex.colaborador_nome} email={ex.colaborador_email} size="sm" showM365Badge={true} />
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm truncate max-w-[200px]">{ex.colaborador_nome}</div>
+                      <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{ex.colaborador_email}</div>
                     </div>
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] font-bold text-rose-600 flex items-center gap-1">{getIcon(ex.devolvido_tipo)} {ex.devolvido_tipo}</span>
-                    <div className="px-2 py-0.5 bg-rose-50 dark:bg-dracula-red/10 border border-rose-100 dark:border-dracula-red/20 rounded-md inline-block">
-                      <span className="text-[9px] font-mono font-bold text-rose-700 dark:text-dracula-red">{ex.devolvido_serial}</span>
+                  {ex.entregue_tipo || ex.entregue_serial ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-bold text-emerald-600 flex items-center gap-1">
+                        {getIcon(ex.entregue_tipo)} {ex.entregue_tipo || 'Equipamento'}
+                      </span>
+                      {ex.entregue_serial && (
+                        <div className="px-2 py-0.5 bg-blue-50 dark:bg-dracula-cyan/10 border border-blue-100 dark:border-dracula-cyan/20 rounded-md inline-block w-fit">
+                          <span className="text-[9px] font-mono font-bold text-blue-700 dark:text-dracula-cyan">{ex.entregue_serial}</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 italic">N/A</span>
+                  )}
+                </td>
+                <td className="px-6 py-4">
+                  {ex.devolvido_tipo || ex.devolvido_serial ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-bold text-rose-600 flex items-center gap-1">
+                        {getIcon(ex.devolvido_tipo)} {ex.devolvido_tipo || 'Equipamento'}
+                      </span>
+                      {ex.devolvido_serial && (
+                        <div className="px-2 py-0.5 bg-rose-50 dark:bg-dracula-red/10 border border-rose-100 dark:border-dracula-red/20 rounded-md inline-block w-fit">
+                          <span className="text-[9px] font-mono font-bold text-rose-700 dark:text-dracula-red">{ex.devolvido_serial}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 italic">N/A</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-center">
                   <StatusBadge exchange={ex} onClick={() => {
@@ -240,12 +336,12 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
                     {ex.status === 'draft' && (
                       <>
                         <button 
-                          onClick={() => handleSendDocuSignAutomatic(ex)} 
+                          onClick={() => onTriggerAgent ? onTriggerAgent(ex) : handleSendDocuSignAutomatic(ex)} 
                           disabled={isSendingDocuSign === ex.id}
-                          className="p-2 text-dracula-purple hover:bg-dracula-purple/10 rounded-lg transition-colors"
-                          title="DocuSign Automático (Executar Script Python)"
+                          className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100/70 dark:hover:bg-blue-900/40 rounded-lg transition-all border border-blue-200/80 dark:border-blue-800/60 shadow-xs"
+                          title="Enviar para Assinatura Digital DocuSign (Agente Autônomo & Outlook)"
                         >
-                          {isSendingDocuSign === ex.id ? <Loader2 size={16} className="animate-spin" /> : <Fingerprint size={16} />}
+                          {isSendingDocuSign === ex.id ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} className="text-blue-600 dark:text-cyan-400" />}
                         </button>
                         <button 
                           onClick={() => handleDownloadForManualSend(ex)} 
@@ -272,7 +368,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
                   </div>
                 </td>
               </tr>
-            ))}
+            )))}
           </tbody>
         </table>
       </div>
@@ -281,6 +377,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
 };
 
 const StatusBadge = ({ exchange, onClick }: { exchange: AssetExchange, onClick: () => void }) => {
+  if (!exchange) return null;
   const { status, docusign_status: docusignStatus, devolucao_sem_termo, tipo_coleta } = exchange;
 
   if (status === 'completed') {

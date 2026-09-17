@@ -5,11 +5,12 @@ import { AssetExchange, LogoPreference } from '../types';
 export const getPDFFileName = (exchange: AssetExchange) => {
   const clean = (str: string) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9\s-]/g, '').trim().toUpperCase() : '';
   
-  const getEquipmentType = (type: string) => {
-    const t = type.toLowerCase();
+  const getEquipmentType = (type?: string) => {
+    if (!type) return 'EQUIPAMENTO';
+    const t = String(type).toLowerCase();
     if (t.includes('note') || t.includes('lap')) return 'NOTEBOOK';
     if (t.includes('smart') || t.includes('cel') || t.includes('phone')) return 'SMARTPHONE';
-    return clean(type);
+    return clean(type) || 'EQUIPAMENTO';
   };
 
   const name = clean(exchange.colaborador_nome).replace(/\s+/g, '_');

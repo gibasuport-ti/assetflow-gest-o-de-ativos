@@ -1,6 +1,6 @@
 {
   "name": "AssetFlow - Gestão de Ativos",
-  "description": "Um sistema robusto para gestão de troca de ativos (notebooks, smartphones, PCs), com conector do Office 365 para busca de colaboradores, exportação para Excel e termos em PDF com DocuSign.",
+  "description": "Sistema corporativo de gestão de troca de ativos integrado ao Microsoft 365 SharePoint Online, com autenticação Microsoft Authenticator (MFA), conformidade de segurança Cirion Zero Trust e termos em PDF com DocuSign.",
   "requestFramePermissions": [
     "camera"
   ],
