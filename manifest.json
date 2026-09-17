@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "AssetFlow - Gestão de Ativos",
+  "short_name": "AssetFlow",
+  "description": "Sistema Corporativo Cirion de Gestão de Troca e Devolução de Ativos de TI",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#282a36",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"]
+}

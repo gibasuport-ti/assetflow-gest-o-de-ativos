@@ -5,6 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AssetFlow - Gestão de Ativos</title>
+    <meta name="description" content="Sistema corporativo de gestão de troca de ativos integrado ao Microsoft 365 SharePoint Online, com autenticação Microsoft Authenticator (MFA), conformidade de segurança Cirion Zero Trust e termos em PDF com DocuSign.">
+    <meta property="og:title" content="AssetFlow - Gestão de Ativos">
+    <meta property="og:description" content="Sistema corporativo de gestão de troca de ativos integrado ao Microsoft 365 SharePoint Online, com autenticação Microsoft Authenticator (MFA), conformidade de segurança Cirion Zero Trust e termos em PDF com DocuSign.">
+    <meta name="theme-color" content="#0284c7">
+    <link rel="icon" type="image/svg+xml" href="./icon.svg">
+    <link rel="apple-touch-icon" href="./icon.svg">
+    <link rel="manifest" href="./manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -62,16 +69,22 @@
         /* Transição suave de cores */
         * { transition: background-color 0.2s ease, border-color 0.2s ease, color 0.1s ease; }
     </style>
-  <script type="module" crossorigin src="./assets/index-DxyfaW2U.js"></script>
-  <link rel="modulepreload" crossorigin href="./assets/vendor-core-Ci3DTZH0.js">
-  <link rel="modulepreload" crossorigin href="./assets/vendor-utils-BBfkEK6V.js">
-  <link rel="modulepreload" crossorigin href="./assets/vendor-lucide-EaY5JjSk.js">
-  <link rel="modulepreload" crossorigin href="./assets/vendor-pdf-CWlfLPU7.js">
+  <script type="module" crossorigin src="./assets/index-Cnv9MBIY.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/vendor-core-i9nqyF7Z.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-utils-BjEEDopx.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-lucide-CoHHTeZw.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-pdf-vSu3RKiP.js">
   <link rel="modulepreload" crossorigin href="./assets/vendor-excel-BBWTpfDg.js">
-  <link rel="modulepreload" crossorigin href="./assets/vendor-firebase-D_Oaf_NG.js">
   <link rel="stylesheet" crossorigin href="./assets/index-Bav0GgkR.css">
 </head>
 <body class="bg-slate-50 dark:bg-dracula-bg text-slate-900 dark:text-dracula-fg">
     <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
+        });
+      }
+    </script>
 </body>
 </html>
