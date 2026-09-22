@@ -1606,11 +1606,11 @@ const AssetForm: React.FC<AssetFormProps> = ({ onSave, editingExchange, onCancel
               onClick={(e) => handleSaveClickCustom(e, true)} 
               disabled={isSubmitting} 
               className="px-8 py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-dracula-purple hover:brightness-110 text-white shadow-xl shadow-indigo-600/30 rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-              title="Gravar e acionar o Agente DocuSign & Outlook para processo de assinatura do Remetente e Destinatário"
+              title="Gravar e enviar para DocuSign: processo de assinatura do remetente e destinatário via Outlook e arquivamento no SharePoint/OneDrive"
             >
               {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : <Bot size={20} className="text-cyan-300 animate-pulse"/>}
               <span>
-                {editingExchange ? 'Salvar e Enviar para DocuSign (Agente Outlook)' : 'Gravar e Enviar para DocuSign (Agente Outlook)'}
+                {editingExchange ? 'Salvar e enviar para DocuSign' : 'Gravar e enviar para DocuSign'}
               </span>
             </button>
           </>

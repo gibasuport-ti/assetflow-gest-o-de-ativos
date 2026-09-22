@@ -2095,3 +2095,10 @@ export const BASELINE_USERS: User[] = [
     "department": "Suporte Técnico"
   }
 ];
+
+// Garantir que todos os registros finalizados da baseline possuam a URL de arquivamento oficial do SharePoint / OneDrive
+for (const ex of BASELINE_EXCHANGES) {
+  if (ex.status === 'completed' && !ex.sharepoint_onedrive_url) {
+    ex.sharepoint_onedrive_url = 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ';
+  }
+}

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
-import { AssetExchange, LogoPreference } from '../types';
-import { FileDown, Trash2, Search, FileSpreadsheet, Pencil, Mail, Laptop, Smartphone, Cpu, Clock, Lock, FileCheck, Upload, Fingerprint, Filter, Download, Loader2, Send, FileText, ExternalLink, Truck, Bot, X } from 'lucide-react';
+import { AssetExchange, LogoPreference, User } from '../types';
+import { FileDown, Trash2, Search, FileSpreadsheet, Pencil, Mail, Laptop, Smartphone, Cpu, Clock, Lock, FileCheck, Upload, Fingerprint, Filter, Download, Loader2, Send, FileText, ExternalLink, Truck, Bot, X, RotateCcw, FolderCheck, ShieldCheck } from 'lucide-react';
 import { generateAssetPDF, getPDFFileName } from '../services/pdfService';
 import { exportToExcel, importFromExcel } from '../services/excelService';
 import { apiService } from '../services/apiService';
@@ -19,13 +19,38 @@ interface InventoryTableProps {
   onBulkImport: (data: AssetExchange[]) => void;
   logoPref: LogoPreference;
   onTriggerAgent?: (exchange: AssetExchange) => void;
+  currentUser?: User | null;
 }
 
-const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, onEdit, onNotify, onSignStart, onStatusChange, onCompleteRequest, onBulkImport, logoPref, onTriggerAgent }) => {
+const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, onEdit, onNotify, onSignStart, onStatusChange, onCompleteRequest, onBulkImport, logoPref, onTriggerAgent, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
   const [isSendingDocuSign, setIsSendingDocuSign] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Verificação estrita de autorização: SOMENTE gibasuporte@gmail.com pode gravar/editar/excluir dados
+  const isMasterAuthorized = useMemo(() => {
+    if (!currentUser || !currentUser.email) return false;
+    const email = currentUser.email.toLowerCase().trim();
+    return email === 'gibasuporte@gmail.com' || email === 'gilberto.araujo.ext@ciriontechnologies.com';
+  }, [currentUser]);
+
+  const handleRestoreBaselineClick = async () => {
+    if (!isMasterAuthorized) {
+      onNotify("Ação Bloqueada: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão de gravação e restauração.", "error");
+      return;
+    }
+    setIsRestoring(true);
+    try {
+      const restored = await apiService.restoreBaselineExchanges();
+      onNotify(`Base histórica restaurada com sucesso! ${restored.length} registros disponíveis.`, "success");
+    } catch (err: any) {
+      onNotify("Erro ao restaurar base: " + (err.message || err), "error");
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const handleDownloadForManualSend = async (ex: AssetExchange) => {
     if (!ex.assinatura_ti) {
@@ -133,7 +158,29 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
     });
   }, [exchanges, searchTerm]);
 
-  const handleImportClick = () => fileInputRef.current?.click();
+  const handleImportClick = () => {
+    if (!isMasterAuthorized) {
+      onNotify("Ação Bloqueada: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão para importar ativos.", "error");
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleEditClick = (ex: AssetExchange) => {
+    if (!isMasterAuthorized) {
+      onNotify("Ação Bloqueada: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão para editar ativos.", "error");
+      return;
+    }
+    onEdit(ex);
+  };
+
+  const handleDeleteClick = (id: string) => {
+    if (!isMasterAuthorized) {
+      onNotify("Ação Bloqueada: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão para excluir ativos.", "error");
+      return;
+    }
+    onDelete(id);
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -199,12 +246,31 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
           <button onClick={handleImportClick} className="flex items-center gap-2 bg-slate-100 dark:bg-dracula-bg px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap"><Upload size={14}/> Importar</button>
           <button onClick={handleExportClick} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap"><FileSpreadsheet size={14}/> Excel</button>
           <button onClick={handleDocuSignClick} className="flex items-center gap-2 bg-dracula-pink/10 text-dracula-pink px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap border border-dracula-pink/20"><ExternalLink size={14}/> Abrir DocuSign</button>
+          <a 
+            href="https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 bg-[#003087] hover:bg-[#002266] text-white px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap shadow-sm transition-all"
+            title="Abrir pasta de arquivamento oficial no SharePoint / OneDrive (https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ)"
+          >
+            <FolderCheck size={14} className="text-cyan-300" /> Pasta SharePoint / OneDrive
+          </a>
+          <button onClick={handleRestoreBaselineClick} disabled={isRestoring} className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap border border-blue-200 dark:border-blue-800 transition-colors">
+            {isRestoring ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14}/>} Restaurar Dados Anteriores
+          </button>
+          <div 
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-300 font-bold text-xs whitespace-nowrap shadow-sm"
+            title="Base de Dados Blindada: Apenas gibasuporte@gmail.com possui permissão de escrita e edição"
+          >
+            <ShieldCheck size={14} className="text-purple-600 dark:text-purple-400" />
+            <span>Base Blindada: gibasuporte@gmail.com</span>
+          </div>
           <div className="ml-auto flex items-center px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-dracula-bg text-slate-600 dark:text-dracula-comment text-xs font-semibold whitespace-nowrap">
             {filtered.length} {filtered.length === 1 ? 'ativo' : 'ativos'} {searchTerm && `(de ${exchanges.length})`}
           </div>
         </div>
 
-        {/* Banner Informativo sobre a Automação e Assinatura Digital DocuSign */}
+        {/* Banner Informativo sobre a Automação e Assinatura Digital DocuSign e Gravação no SharePoint */}
         <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-dracula-purple/10 border border-indigo-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
@@ -213,14 +279,14 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <h4 className="text-xs font-black text-slate-800 dark:text-dracula-fg uppercase tracking-wider">
-                  Fluxo de Assinatura Digital DocuSign & Outlook
+                  Fluxo Obrigatório: DocuSign • Outlook • Arquivamento no SharePoint
                 </h4>
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
                   Agente Ativo
                 </span>
               </div>
               <p className="text-[11px] text-slate-600 dark:text-dracula-comment leading-relaxed">
-                Para enviar um termo para assinatura digital com protocolo oficial DocuSign, clique no ícone do robô <strong className="text-blue-600 dark:text-blue-400 font-bold">🤖 (Agente DocuSign)</strong> na coluna de <strong>Ações</strong> de qualquer item em <strong className="text-slate-700 dark:text-dracula-fg uppercase text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-dracula-bg">'Rascunho'</strong>, ou salve um novo registro usando o botão <em>"Gravar e Enviar para DocuSign"</em>.
+                Ao clicar em <em>"Gravar e enviar para DocuSign"</em>: <strong>(1)</strong> Envio para DocuSign com chancela do remetente TI; <strong>(2)</strong> Destinatário recebe notificação no Outlook e assina digitalmente; <strong>(3)</strong> Retorno e gravação automática do termo assinado na pasta oficial do SharePoint (<a href="https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-cyan-400 font-semibold underline underline-offset-2">https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ</a>) com notificação de conclusão para ambas as partes.
               </p>
             </div>
           </div>
@@ -228,20 +294,21 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
       </div>
 
       <div className="flex-1 overflow-x-auto relative">
-        <table className="w-full text-left min-w-[800px]">
+        <table className="w-full text-left min-w-[900px]">
           <thead className="bg-slate-50 dark:bg-dracula-darker sticky top-0 z-10 border-b dark:border-dracula-current">
             <tr>
               <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-400">Colaborador</th>
               <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-400">Entregue</th>
               <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-400">Devolvido</th>
               <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-400 text-center">Status</th>
+              <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-400 text-center">SharePoint / OneDrive</th>
               <th className="px-6 py-4 text-[10px] font-bold uppercase text-slate-400 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y dark:divide-dracula-current">
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-16 text-center">
+                <td colSpan={6} className="px-6 py-16 text-center">
                   <div className="flex flex-col items-center justify-center max-w-md mx-auto space-y-3">
                     <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-dracula-bg flex items-center justify-center text-slate-400">
                       <Search size={22} />
@@ -319,19 +386,53 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
                     }
                   }} />
                 </td>
+                <td className="px-6 py-4 text-center">
+                  {ex.status === 'completed' ? (
+                    <a
+                      href={ex.sharepoint_onedrive_url || "https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold bg-blue-50 text-[#003087] hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800/60 transition-all shadow-xs group"
+                      title="Abrir pasta no SharePoint / OneDrive: https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ"
+                    >
+                      <FolderCheck size={13} className="text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
+                      <span>Arquivado</span>
+                      <ExternalLink size={10} className="opacity-60" />
+                    </a>
+                  ) : ex.status === 'pending_receiver' ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40" title="Aguardando assinatura do destinatário no Outlook para arquivamento no SharePoint">
+                      <Clock size={11} /> Aguardando Assinatura
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 dark:text-dracula-comment italic">
+                      Pendente Envio
+                    </span>
+                  )}
+                </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end gap-1">
                     {ex.status === 'completed' && (
-                      <button 
-                        onClick={() => {
-                          const doc = generateAssetPDF(ex, logoPref);
-                          if (doc) doc.save(getPDFFileName(ex));
-                        }} 
-                        className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-colors"
-                        title="Baixar Termo Assinado"
-                      >
-                        <Download size={16}/>
-                      </button>
+                      <>
+                        <a 
+                          href={ex.sharepoint_onedrive_url || "https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-colors"
+                          title="Abrir no SharePoint / OneDrive (https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ)"
+                        >
+                          <ExternalLink size={16}/>
+                        </a>
+                        <button 
+                          onClick={() => {
+                            const doc = generateAssetPDF(ex, logoPref);
+                            if (doc) doc.save(getPDFFileName(ex));
+                          }} 
+                          className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-colors"
+                          title="Baixar Termo Assinado (PDF)"
+                        >
+                          <Download size={16}/>
+                        </button>
+                      </>
                     )}
                     {ex.status === 'draft' && (
                       <>
@@ -363,8 +464,8 @@ const InventoryTable: React.FC<InventoryTableProps> = ({ exchanges, onDelete, on
                         <FileCheck size={16} />
                       </button>
                     )}
-                    <button onClick={() => onEdit(ex)} className="p-2 text-slate-400"><Pencil size={16}/></button>
-                    <button onClick={() => onDelete(ex.id)} className="p-2 text-rose-500"><Trash2 size={16}/></button>
+                    <button onClick={() => handleEditClick(ex)} className="p-2 text-slate-400 hover:text-blue-500 transition-colors" title="Editar Ativo"><Pencil size={16}/></button>
+                    <button onClick={() => handleDeleteClick(ex.id)} className="p-2 text-rose-500 hover:text-rose-600 transition-colors" title="Excluir Ativo"><Trash2 size={16}/></button>
                   </div>
                 </td>
               </tr>

@@ -4,6 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { AssetExchange, User, SharePointStatus, MigrationResult, Office365User, Office365ConnectorInfo } from '../types';
 import { AD_USERS, normalizeText } from '../constants';
+import { BASELINE_EXCHANGES, BASELINE_USERS } from './baselineData';
 
 const SHAREPOINT_FILE = path.join(process.cwd(), 'sharepoint_db.json');
 const AUDIT_LOG_FILE = path.join(process.cwd(), 'audit_cirion_m365.log');
@@ -65,22 +66,63 @@ const readSharePointStore = async (): Promise<SharePointDataStore> => {
   try {
     if (await fs.pathExists(SHAREPOINT_FILE)) {
       const data = await fs.readJson(SHAREPOINT_FILE);
-      return {
-        exchanges: data.exchanges || [],
-        users: data.users || [],
+      let exchanges = Array.isArray(data.exchanges) ? data.exchanges : [];
+      let users = Array.isArray(data.users) ? data.users : [];
+      let needsSave = false;
+
+      // Garantir integridade da base com todos os 60+ registros anteriores de baselineData
+      const existingIds = new Set(exchanges.map((e: any) => e.id));
+      for (const baseEx of BASELINE_EXCHANGES) {
+        if (baseEx.status === 'completed' && !baseEx.sharepoint_onedrive_url) {
+          baseEx.sharepoint_onedrive_url = 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ';
+        }
+        if (!existingIds.has(baseEx.id)) {
+          exchanges.push(baseEx);
+          existingIds.add(baseEx.id);
+          needsSave = true;
+        }
+      }
+
+      for (const ex of exchanges) {
+        if (ex.status === 'completed' && !ex.sharepoint_onedrive_url) {
+          ex.sharepoint_onedrive_url = 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ';
+          needsSave = true;
+        }
+      }
+
+      const existingUserEmails = new Set(users.map((u: any) => u.email?.toLowerCase()));
+      for (const baseUser of BASELINE_USERS) {
+        if (!existingUserEmails.has(baseUser.email?.toLowerCase())) {
+          users.push(baseUser);
+          existingUserEmails.add(baseUser.email?.toLowerCase());
+          needsSave = true;
+        }
+      }
+
+      const store: SharePointDataStore = {
+        exchanges,
+        users,
         lastUpdated: data.lastUpdated || new Date().toISOString(),
         auditTrail: data.auditTrail || []
       };
+
+      if (needsSave) {
+        await writeSharePointStore(store);
+      }
+
+      return store;
     }
   } catch (err) {
     console.error('[SharePoint Store] Erro ao ler banco local do SharePoint:', err);
   }
-  return {
-    exchanges: [],
-    users: [],
+  const initialStore: SharePointDataStore = {
+    exchanges: [...BASELINE_EXCHANGES],
+    users: [...BASELINE_USERS],
     lastUpdated: new Date().toISOString(),
     auditTrail: []
   };
+  await writeSharePointStore(initialStore);
+  return initialStore;
 };
 
 const writeSharePointStore = async (store: SharePointDataStore): Promise<void> => {
@@ -387,6 +429,9 @@ export class SharePointService {
     mfaVerified: boolean = true,
     clientToken?: string
   ): Promise<{ local: boolean; remoteSync: boolean; message?: string }> {
+    if (exchange.status === 'completed' && !exchange.sharepoint_onedrive_url) {
+      exchange.sharepoint_onedrive_url = 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ';
+    }
     const store = await readSharePointStore();
     const existingIndex = store.exchanges.findIndex(e => e.id === exchange.id);
 
@@ -502,6 +547,36 @@ export class SharePointService {
 
     await writeSharePointStore(store);
     await logCirionAudit('DELETE_EXCHANGE', id, operator, mfaVerified);
+  }
+
+  // Restaurar dados anteriores (60+ movimentações históricas de baseline)
+  async restoreBaseline(): Promise<AssetExchange[]> {
+    const store = await readSharePointStore();
+    const existingIds = new Set(store.exchanges.map(e => e.id));
+    for (const baseEx of BASELINE_EXCHANGES) {
+      if (baseEx.status === 'completed' && !baseEx.sharepoint_onedrive_url) {
+        baseEx.sharepoint_onedrive_url = 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ';
+      }
+      if (!existingIds.has(baseEx.id)) {
+        store.exchanges.push(baseEx);
+        existingIds.add(baseEx.id);
+      }
+    }
+    for (const ex of store.exchanges) {
+      if (ex.status === 'completed' && !ex.sharepoint_onedrive_url) {
+        ex.sharepoint_onedrive_url = 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ';
+      }
+    }
+    const existingUserEmails = new Set(store.users.map(u => u.email?.toLowerCase()));
+    for (const baseUser of BASELINE_USERS) {
+      if (!existingUserEmails.has(baseUser.email?.toLowerCase())) {
+        store.users.push(baseUser);
+        existingUserEmails.add(baseUser.email?.toLowerCase());
+      }
+    }
+    await writeSharePointStore(store);
+    await logCirionAudit('RESTORE_BASELINE', 'ALL_EXCHANGES', 'system', true, { total: store.exchanges.length });
+    return store.exchanges;
   }
 
   // Listar usuários do SharePoint

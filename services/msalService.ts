@@ -36,7 +36,8 @@ class MsalAuthService {
         'Authorization': `Bearer cirion_mfa_${session.id}`,
         'x-mfa-verified': 'true',
         'x-user-id': session.id,
-        'x-user-name': session.username
+        'x-user-name': session.username,
+        'x-user-email': session.email || ''
       };
     }
     return {

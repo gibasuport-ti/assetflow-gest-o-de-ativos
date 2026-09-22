@@ -2,6 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // ===============================================================
+    // DEFAULT DENY: Bloqueio global de segurança
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
     // Assumed Data Model
     // ===============================================================
     //
@@ -27,14 +34,14 @@ service cloud.firestore {
     //   - id: string (required)
     //   - to: string (required)
     //   - subject: string (required)
-    //   - sentAt: number (required)
+    //   - sentAt: string | number (required)
     //
     // Collection: audit_logs
     // Fields:
     //   - action: string (required)
     //   - exchangeId: string (optional)
     //   - envelopeId: string (optional)
-    //   - timestamp: timestamp (required)
+    //   - timestamp: timestamp | number (required)
     //   - user: string (optional)
     //   - error: string (optional)
     //   - reason: string (optional)
@@ -43,34 +50,26 @@ service cloud.firestore {
     // ===============================================================
 
     // ===============================================================
-    // Helper Functions
+    // Helper Functions de Segurança e Blindagem
     // ===============================================================
     
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isAuthenticated() && (
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true
-      );
-    }
-
-    function isMasterAdminEmail(email) {
-      return email.lower().trim() == "gibasuporte@gmail.com";
-    }
-
-    function isMasterAdmin() {
-      return isMasterAdminEmail(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email);
+    // Validador exclusivo para o proprietário master: gibasuporte@gmail.com
+    function isOnlyGibaSuporte() {
+      return isAuthenticated() && 
+             request.auth.token.email != null &&
+             request.auth.token.email.lower().trim() == "gibasuporte@gmail.com";
     }
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isDocOwner() {
-      return isAuthenticated() && request.auth.uid == resource.data.createdBy;
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
     }
 
     function isValidUser(data) {
@@ -86,7 +85,7 @@ service cloud.firestore {
              data.id is string &&
              data.operationType in ['exchange', 'delivery', 'return'] &&
              data.status in ['draft', 'pending_receiver', 'completed'] &&
-             data.timestamp is number &&
+             (data.timestamp is number || data.timestamp is timestamp) &&
              data.colaborador_nome is string && data.colaborador_nome.size() > 0 &&
              data.createdBy is string &&
              (!('docusign_status' in data) || data.docusign_status in ['pending', 'completed', 'declined', 'voided']);
@@ -96,53 +95,54 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'to', 'subject', 'sentAt']) &&
              data.id is string &&
              data.to is string &&
-             data.subject is string &&
-             data.sentAt is string;
+             data.subject is string;
     }
 
     // ===============================================================
-    // Rules
+    // Regras Blindadas por Coleção
+    // Somente gibasuporte@gmail.com possui permissão de escrita e edição
     // ===============================================================
 
+    // Usuários do Sistema
     match /users/{userId} {
+      // Usuários autenticados podem ler dados ou gibasuporte@gmail.com pode auditar todos
       allow read: if isAuthenticated();
       
-      allow create, update: if isOwner(userId) && isValidUser(request.resource.data) && 
-                              (request.resource.data.isAdmin == false || isMasterAdminEmail(request.resource.data.email));
-      
-      allow delete: if isAdmin() && !isOwner(userId);
+      // Somente gibasuporte@gmail.com pode criar, alterar ou excluir contas de usuários
+      allow create, update: if isOnlyGibaSuporte() && isValidId(userId) && isValidUser(request.resource.data);
+      allow delete: if isOnlyGibaSuporte() && resource.data.email.lower() != "gibasuporte@gmail.com";
     }
 
+    // Ativos e Termos de Responsabilidade (Exchanges)
     match /exchanges/{exchangeId} {
-      // All authenticated users can read exchanges for inventory visibility.
+      // Leitura permitida para usuários autenticados para fins de auditoria e inventário
       allow read: if isAuthenticated();
       
-      // Any authenticated user can create an exchange.
-      // We force createdBy to match the auth UID.
-      allow create: if isAuthenticated() && isValidExchange(request.resource.data) && 
-                      request.resource.data.createdBy == request.auth.uid;
-      
-      // Owners can update their own exchanges. Admins can update any exchange.
-      allow update: if (isDocOwner() && isValidExchange(request.resource.data) && request.resource.data.createdBy == resource.data.createdBy) || 
-                      isAdmin();
-      
-      // Only admins can delete exchanges.
-      allow delete: if isAdmin();
+      // REGRA DE OURO: Somente gibasuporte@gmail.com pode gravar, editar ou remover ativos
+      allow create: if isOnlyGibaSuporte() && isValidId(exchangeId) && isValidExchange(request.resource.data);
+      allow update: if isOnlyGibaSuporte() && isValidId(exchangeId) && isValidExchange(request.resource.data);
+      allow delete: if isOnlyGibaSuporte() && isValidId(exchangeId);
     }
 
+    // Notificações e Histórico de E-mails do Outlook
     match /emails/{emailId} {
-      // Allow read/write for simulated mock inbox in development/testing sessions
-      allow read, write: if true;
+      // Leitura autorizada apenas para o administrador ou para o destinatário do e-mail
+      allow read: if isAuthenticated() && (isOnlyGibaSuporte() || resource.data.to == request.auth.token.email);
+      
+      // Gravação e atualização restrita ao gestor oficial gibasuporte@gmail.com
+      allow create, update: if isOnlyGibaSuporte() && isValidId(emailId) && isValidEmail(request.resource.data);
+      allow delete: if isOnlyGibaSuporte() && isValidId(emailId);
     }
 
+    // Trilha de Auditoria (Audit Logs) - Imutável e Protegida
     match /audit_logs/{logId} {
-      // Only admins can read audit logs.
-      allow read: if isAdmin();
+      // Somente gibasuporte@gmail.com pode consultar registros de auditoria
+      allow read: if isOnlyGibaSuporte();
       
-      // Backend (firebase-admin) handles creation, but we can allow admins to create if needed.
-      allow create: if isAdmin();
+      // Somente gibasuporte@gmail.com ou serviços autorizados podem registrar eventos de log
+      allow create: if isOnlyGibaSuporte() && isValidId(logId);
       
-      // Audit logs should be immutable.
+      // Logs de auditoria são estritamente imutáveis para garantir conformidade legal
       allow update, delete: if false;
     }
   }

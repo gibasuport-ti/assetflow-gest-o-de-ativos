@@ -7,12 +7,67 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & Build Artifacts
 node_modules
 dist
 dist-ssr
 *.local
+project-bundle.md
 
-# Editor directories and files
+# =========================================================
+# SEGURANÇA MÁXIMA: CHAVES, SENHAS, CERTIFICADOS E AMBIENTES
+# Bloqueia vazamentos acidentais no GitHub (Git Guardian / OWASP)
+# =========================================================
+.env
+.env.*
+!.env.example
+*.env
+docusign.env
+docusign.env.local
+secrets/
+credentials/
+*.credentials.json
+firebase-adminsdk*.json
+
+# Chaves Criptográficas, Certificados e Tokens
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*.pkcs12
+id_rsa
+id_rsa.pub
+
+# Bancos de dados locais contendo dados confidenciais, inventário e assinaturas
+sharepoint_db.json
+emails_db.json
+audit_logs.json
+*.db.json
+*_db.json
+db.json
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+*.backup
+backups/
+backup/
+data/
+
+# Documentos Confidenciais, PDFs Assinados e Histórico
+Cartas_Firmadas_Local/
+Cartas_Firmadas/
+signed_documents/
+*.pdf
+migrated_prompt_history/
+*.prompt_history*
+*.csv
+*.xlsx
+*.xls
+
+# Editor & Sistema Operacional
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -22,3 +77,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+Thumbs.db

@@ -14,6 +14,7 @@ import LoginScreen from './components/LoginScreen';
 import UserManagement from './components/UserManagement';
 import { SharePointMigrationModal } from './components/SharePointMigrationModal';
 import { StandaloneAppModal } from './components/StandaloneAppModal';
+import { DatabaseSecurityModal } from './components/DatabaseSecurityModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import { apiService } from './services/apiService';
 import { msalService } from './services/msalService';
@@ -21,6 +22,7 @@ import { urlService } from './services/urlService';
 import { MERCADO_PAGO_URL } from './constants';
 import { generateAssetPDF, getPDFFileName } from './services/pdfService';
 import { generatePromptPDF } from './services/promptPdfService';
+import { securityService } from './services/securityService';
 
 // Componente de App principal
 const App: React.FC = () => {
@@ -41,6 +43,7 @@ const App: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSharePointModalOpen, setIsSharePointModalOpen] = useState(false);
   const [isStandaloneModalOpen, setIsStandaloneModalOpen] = useState(false);
+  const [isSecurityShieldModalOpen, setIsSecurityShieldModalOpen] = useState(false);
   const [showStartScreen, setShowStartScreen] = useState(() => {
     return window.location.hash === '#fullscreen';
   });
@@ -100,6 +103,13 @@ const App: React.FC = () => {
 
   const actualIsAdmin = currentUser?.isAdmin;
   const effectiveIsAdmin = actualIsAdmin && !isSimulatingUser;
+
+  // Verificação estrita de autorização: Somente gibasuporte@gmail.com possui permissão de gravação e edição de dados
+  const isOnlyGibaMaster = React.useMemo(() => {
+    if (!currentUser || !currentUser.email) return false;
+    const email = currentUser.email.toLowerCase().trim();
+    return email === 'gibasuporte@gmail.com' || email === 'gilberto.araujo.ext@ciriontechnologies.com';
+  }, [currentUser]);
 
   useEffect(() => {
     localStorage.setItem('is_simulating_user', String(isSimulatingUser));
@@ -313,6 +323,10 @@ const App: React.FC = () => {
   };
 
   const handleSaveExchange = async (exchange: AssetExchange, isDocuSignDirect?: boolean) => {
+    if (!isOnlyGibaMaster) {
+      showNotification("Acesso Negado: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão de gravação e edição.", "error");
+      return;
+    }
     setIsLoading(true);
     try {
       const activeExchange = {
@@ -339,15 +353,28 @@ const App: React.FC = () => {
   };
 
   const handleDeleteRequest = (id: string) => {
+    if (!isOnlyGibaMaster) {
+      showNotification("Acesso Negado: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão de exclusão.", "error");
+      return;
+    }
     setItemToDelete(id);
   };
 
   const handleCompleteRequest = (id: string) => {
+    if (!isOnlyGibaMaster) {
+      showNotification("Acesso Negado: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão para concluir termos.", "error");
+      return;
+    }
     setItemToComplete(id);
   };
 
   const confirmDelete = async () => {
     if (!itemToDelete) return;
+    if (!isOnlyGibaMaster) {
+      showNotification("Acesso Negado: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão de exclusão.", "error");
+      setItemToDelete(null);
+      return;
+    }
     setIsLoading(true);
     try {
       await apiService.delete(String(itemToDelete));
@@ -362,6 +389,10 @@ const App: React.FC = () => {
   };
 
   const handleStatusChange = async (id: string, status: 'draft' | 'pending_receiver' | 'completed') => {
+    if (!isOnlyGibaMaster) {
+      showNotification("Acesso Negado: A base de dados está blindada. Somente o administrador autorizado (gibasuporte@gmail.com) possui permissão para alterar status de ativos.", "error");
+      return;
+    }
     setIsLoading(true);
     try {
       const exchange = exchanges.find(e => e.id === id);
@@ -501,17 +532,29 @@ const App: React.FC = () => {
 
   const [isUserGateOpen, setIsUserGateOpen] = useState(false);
   const [gatePassword, setGatePassword] = useState('');
+  const [isVerifyingGate, setIsVerifyingGate] = useState(false);
 
-  const handleUserGateSubmit = (e: React.FormEvent) => {
+  const handleUserGateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const requiredPassword = import.meta.env.VITE_GATE_PASSWORD || 'IncluirUsuario';
-    if (gatePassword === requiredPassword) {
-      setCurrentView('users');
-      setIsUserGateOpen(false);
-      setGatePassword('');
-      showNotification("Acesso autorizado", "success");
-    } else {
-      showNotification("Senha de acesso incorreta", "error");
+    if (!gatePassword.trim()) {
+      showNotification("Digite a senha de administrador", "error");
+      return;
+    }
+    setIsVerifyingGate(true);
+    try {
+      const result = await securityService.verifyGatePassword(gatePassword);
+      if (result.authorized) {
+        setCurrentView('users');
+        setIsUserGateOpen(false);
+        setGatePassword('');
+        showNotification("Acesso autorizado com sucesso", "success");
+      } else {
+        showNotification(result.message || "Senha de acesso incorreta", "error");
+      }
+    } catch {
+      showNotification("Erro ao validar credenciais", "error");
+    } finally {
+      setIsVerifyingGate(false);
     }
   };
 
@@ -903,6 +946,17 @@ const App: React.FC = () => {
                   <span>Governança SharePoint</span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => setIsSecurityShieldModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-700 dark:text-purple-300 font-bold text-xs transition-all shadow-sm cursor-pointer"
+                  title="Painel de Segurança: Base de dados blindada exclusivamente para gibasuporte@gmail.com"
+                >
+                  <ShieldCheck size={13} className="text-purple-600 dark:text-purple-400" />
+                  <span>Base Blindada</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                </button>
+
                 <div 
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold text-xs"
                   title="Autenticação Corporativa Cirion com Microsoft Authenticator (MFA) verificada"
@@ -981,6 +1035,7 @@ const App: React.FC = () => {
                   }}
                   logoPref={logoPref}
                   onTriggerAgent={(ex) => setAgentExchange(ex)}
+                  currentUser={currentUser}
                 />
               </ErrorBoundary>
             )}
@@ -1044,7 +1099,7 @@ const App: React.FC = () => {
           onCancel={() => setItemToDelete(null)}
           isDanger
           confirmLabel="Excluir"
-          confirmationKeyword={import.meta.env.VITE_DELETE_KEYWORD || 'excluiragora'}
+          requireSecurityKeyword={true}
         />
       )}
 
@@ -1094,9 +1149,10 @@ const App: React.FC = () => {
                   </button>
                   <button 
                     type="submit"
-                    className="flex-1 py-4 bg-dracula-purple text-white rounded-2xl font-bold shadow-lg shadow-dracula-purple/20 hover:scale-[1.02] transition-all"
+                    disabled={isVerifyingGate}
+                    className="flex-1 py-4 bg-dracula-purple text-white rounded-2xl font-bold shadow-lg shadow-dracula-purple/20 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    Acessar
+                    {isVerifyingGate ? <Loader2 size={18} className="animate-spin" /> : 'Acessar'}
                   </button>
                 </div>
               </form>
@@ -1115,6 +1171,11 @@ const App: React.FC = () => {
       <StandaloneAppModal
         isOpen={isStandaloneModalOpen}
         onClose={() => setIsStandaloneModalOpen(false)}
+      />
+      <DatabaseSecurityModal
+        isOpen={isSecurityShieldModalOpen}
+        onClose={() => setIsSecurityShieldModalOpen(false)}
+        currentUserEmail={currentUser?.email || userName}
       />
       {showStartScreen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center bg-slate-900 text-white">

@@ -55,18 +55,9 @@ const MockInbox: React.FC<MockInboxProps> = ({ emails, onUpdateEmails, exchanges
       return;
     }
 
-    const expectedGatePassword = import.meta.env.VITE_GATE_PASSWORD || 'IncluirUsuario';
-    const expectedDeleteKeyword = import.meta.env.VITE_DELETE_KEYWORD || 'excluiragora';
-
-    // Validação de senha no cliente
-    if (adminPassword !== expectedGatePassword && adminPassword !== expectedDeleteKeyword) {
-      setPasswordError('Senha de administrador incorreta.');
-      return;
-    }
-
     setIsClearing(true);
     try {
-      await apiService.clearAllEmails(adminPassword);
+      await apiService.clearAllEmails(adminPassword.trim());
       onUpdateEmails([]);
       setSelectedId(null);
       setIsClearModalOpen(false);
@@ -211,11 +202,15 @@ const MockInbox: React.FC<MockInboxProps> = ({ emails, onUpdateEmails, exchanges
                 <h4 className="text-[11px] font-bold truncate text-slate-800 dark:text-slate-200">{email.subject}</h4>
                 <p className="text-[10px] text-slate-400 truncate mt-1">{email.body.substring(0, 50)}...</p>
                 
-                {email.envelopeId && (
+                {email.sharepointUrl ? (
+                  <div className="mt-2 flex items-center gap-1 text-[9px] font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md w-fit border border-emerald-300/60 dark:border-emerald-700/50">
+                    <span>✓ Assinado por Ambos • SharePoint</span>
+                  </div>
+                ) : email.envelopeId ? (
                   <div className="mt-2 flex items-center gap-1 text-[9px] font-mono text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-md w-fit">
                     <span>DocuSign:</span> <strong>{email.envelopeId}</strong>
                   </div>
-                )}
+                ) : null}
               </div>
             );
           })}
@@ -370,26 +365,52 @@ const MockInbox: React.FC<MockInboxProps> = ({ emails, onUpdateEmails, exchanges
                     </div>
                  )}
 
-                 {/* Botão de Concluído se já foi assinado */}
-                 {isCompleted && currentExchange && (
-                    <div className="text-center p-6 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-2xl space-y-3">
+                 {/* Card de Concluído se já foi assinado por ambas as partes ou possui sharepointUrl */}
+                 {(isCompleted || selectedEmail.sharepointUrl) && (
+                    <div className="text-center p-6 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-2xl space-y-4">
                        <div className="flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-400 font-black text-sm">
                          <CheckCircle2 size={20} />
-                         <span>ASSINATURA CONCLUÍDA PELO DESTINATÁRIO</span>
+                         <span>PROCESSO CONCLUÍDO • AMBAS AS PARTES ASSINARAM</span>
                        </div>
-                       <p className="text-xs text-slate-600 dark:text-slate-400">
-                         O termo foi validado juridicamente por ambas as partes e arquivado com sucesso no SharePoint M365.
+                       <p className="text-xs text-slate-600 dark:text-slate-300 max-w-lg mx-auto leading-relaxed">
+                         O termo foi assinado pelo Remetente (TI) e pelo Destinatário via DocuSign e retornado ao Outlook. O documento assinado está gravado com segurança na pasta do SharePoint/OneDrive.
                        </p>
-                       <button 
-                         type="button"
-                         onClick={() => {
-                           const pdf = generateAssetPDF(currentExchange, logoPref);
-                           if (pdf) pdf.save(getPDFFileName(currentExchange));
-                         }}
-                         className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md transition-all inline-flex items-center gap-2"
-                       >
-                         <FileDown size={16} /> Baixar Cópia Assinada (PDF)
-                       </button>
+
+                       <div className="p-3 bg-white/90 dark:bg-slate-900/80 rounded-xl border border-emerald-300/80 dark:border-emerald-800/60 text-left max-w-lg mx-auto">
+                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pasta de Gravação no SharePoint / OneDrive:</span>
+                         <a 
+                           href={selectedEmail.sharepointUrl || 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ'} 
+                           target="_blank" 
+                           rel="noopener noreferrer" 
+                           className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 hover:underline break-all block mt-1"
+                         >
+                           {selectedEmail.sharepointUrl || 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ'}
+                         </a>
+                       </div>
+
+                       <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                         <a 
+                           href={selectedEmail.sharepointUrl || 'https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ'}
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           className="px-5 py-2.5 bg-[#003087] hover:bg-[#002266] text-white rounded-xl font-bold text-xs shadow-md transition-all inline-flex items-center gap-2 cursor-pointer"
+                         >
+                           <ExternalLink size={15} /> Acessar no SharePoint / OneDrive
+                         </a>
+
+                         {currentExchange && (
+                           <button 
+                             type="button"
+                             onClick={() => {
+                               const pdf = generateAssetPDF(currentExchange, logoPref);
+                               if (pdf) pdf.save(getPDFFileName(currentExchange));
+                             }}
+                             className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md transition-all inline-flex items-center gap-2 cursor-pointer"
+                           >
+                             <FileDown size={15} /> Baixar Cópia Assinada (PDF)
+                           </button>
+                         )}
+                       </div>
                     </div>
                  )}
               </div>
@@ -427,7 +448,7 @@ const MockInbox: React.FC<MockInboxProps> = ({ emails, onUpdateEmails, exchanges
             <div className="space-y-4">
               <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 rounded-2xl">
                 <p className="text-xs text-rose-700 dark:text-rose-300 leading-relaxed font-medium">
-                  Esta ação removerá permanentemente todos os e-mails e notificações de teste da caixa de entrada do Outlook interno. Para confirmar, digite a <strong>senha do administrador</strong>.
+                  Esta ação removerá permanentemente todos os e-mails e notificações da caixa de entrada do Outlook interno. Digite a <strong>senha do administrador</strong> (padrão: <code className="font-mono bg-rose-100 dark:bg-rose-900/50 px-1.5 py-0.5 rounded text-[11px] font-bold">IncluirUsuario</code> ou <code className="font-mono bg-rose-100 dark:bg-rose-900/50 px-1.5 py-0.5 rounded text-[11px] font-bold">excluiragora</code>).
                 </p>
               </div>
 
@@ -440,7 +461,7 @@ const MockInbox: React.FC<MockInboxProps> = ({ emails, onUpdateEmails, exchanges
                     type="password"
                     id="admin-password-clear-emails"
                     autoFocus
-                    placeholder="Digite a senha de administrador"
+                    placeholder="IncluirUsuario ou excluiragora"
                     value={adminPassword}
                     onChange={(e) => {
                       setAdminPassword(e.target.value);

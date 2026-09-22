@@ -76,7 +76,8 @@ export const DocuSignAgentModal: React.FC<DocuSignAgentModalProps> = ({
     { id: 'audit', title: 'Validação e Auditoria do Ativo', description: 'Conferência de seriais, dados do colaborador e especificações', status: 'pending' },
     { id: 'sender_sig', title: 'Assinatura do Remetente (TI)', description: 'Aplicação da chancela digital institucional autenticada', status: 'pending' },
     { id: 'docusign_env', title: 'Geração de Envelope DocuSign', description: 'Renderização do Termo Oficial e criação de protocolo eSignature', status: 'pending' },
-    { id: 'outlook_dispatch', title: 'Despacho para Destinatário via Outlook', description: 'Disparo de notificação corporativa formal com link de assinatura', status: 'pending' }
+    { id: 'outlook_dispatch', title: 'Despacho para Destinatário via Outlook', description: 'Disparo de notificação corporativa formal com link de assinatura', status: 'pending' },
+    { id: 'sharepoint_archive', title: 'Arquivamento no SharePoint / OneDrive', description: 'Gravação em https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ após ambas as assinaturas', status: 'pending' }
   ]);
 
   // Inicializa o carimbo digital padrão caso o remetente ainda não tenha assinatura
@@ -557,6 +558,28 @@ export const DocuSignAgentModal: React.FC<DocuSignAgentModalProps> = ({
                 </p>
                 <div className="inline-block mt-2 px-3 py-1 bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700/50 rounded-xl text-emerald-800 dark:text-emerald-300 font-mono text-xs font-bold">
                   Protocolo DocuSign: {resultData.envelopeId}
+                </div>
+
+                <div className="mt-4 p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 text-left flex items-start gap-3 max-w-xl mx-auto">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <ExternalLink size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-300 tracking-wider block">
+                      Arquivamento Oficial no SharePoint / OneDrive
+                    </span>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                      Assim que o destinatário concluir a assinatura via Outlook, o documento oficial assinado por ambas as partes é retornado e gravado na pasta:
+                    </p>
+                    <a 
+                      href="https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ" 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline break-all block mt-1"
+                    >
+                      https://xyzlatam.sharepoint.com/:f:/r/sites/LATAMEndUserServices-EndUserSupportBrasil/Documentos%20compartidos/End%20User%20Support%20Brasil/10%20-%20Gilberto/Cartas%20Firmadas?d=wb491a040d8ea487ebe845ef068cb5498&csf=1&web=1&e=GkwfNQ
+                    </a>
+                  </div>
                 </div>
               </div>
 

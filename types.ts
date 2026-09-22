@@ -74,6 +74,7 @@ export interface AssetExchange {
   docusign_status?: 'pending' | 'completed' | 'declined' | 'voided';
   docusign_signed_at?: number;
   docusign_file_path?: string;
+  sharepoint_onedrive_url?: string;
 }
 
 export interface MockEmail {
@@ -89,6 +90,8 @@ export interface MockEmail {
   attachment?: boolean;
   envelopeId?: string;
   signingUrl?: string;
+  sharepointUrl?: string;
+  isCompletionNotice?: boolean;
 }
 
 export interface User {
